@@ -1,27 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, Zap, Crown, Gamepad2 } from 'lucide-react';
 import { cn } from '../utils/helpers';
-
-interface Message {
-  id: string;
-  role: 'user' | 'npc';
-  content: string;
-  timestamp: Date;
-}
+import { useGameStore } from '../store/useGameStore';
 
 type NPCState = 'working' | 'resting' | 'roast' | 'encourage';
 
 export function NPC() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'npc',
-      content: '早安！今天的任务已经准备好了，准备好了吗？🦞',
-      timestamp: new Date(),
-    },
-  ]);
+  const messages = useGameStore((state) => state.npcMessages);
+  const npcState = useGameStore((state) => state.npcState);
+  const setSyncedNpcState = useGameStore((state) => state.setNpcState);
+  const addNpcMessage = useGameStore((state) => state.addNpcMessage);
   const [input, setInput] = useState('');
-  const [npcState, setNpcState] = useState<NPCState>('working');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -32,20 +21,17 @@ export function NPC() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async (presetText?: string) => {
+    const content = presetText || input;
+    if (!content.trim()) return;
 
-    const userMessage: Message = {
+    await addNpcMessage({
       id: Date.now().toString(),
       role: 'user',
-      content: input,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+      content
+    });
     setInput('');
 
-    // Simulate NPC response
     setTimeout(() => {
       const responses = [
         '不错的想法！继续保持这个状态 💪',
@@ -55,15 +41,12 @@ export function NPC() {
         '别偷懒了，快去完成任务吧！😏',
         '你刷短视频的速度比做视频快十倍吧？',
       ];
-      
-      const npcMessage: Message = {
+
+      addNpcMessage({
         id: (Date.now() + 1).toString(),
         role: 'npc',
-        content: responses[Math.floor(Math.random() * responses.length)],
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, npcMessage]);
+        content: responses[Math.floor(Math.random() * responses.length)]
+      });
     }, 1000);
   };
 
@@ -141,7 +124,7 @@ export function NPC() {
               {(['working', 'resting', 'roast', 'encourage'] as NPCState[]).map((state) => (
                 <button
                   key={state}
-                  onClick={() => setNpcState(state)}
+                  onClick={() => setSyncedNpcState(state)}
                   className={cn(
                     "pop-card !p-3 text-left !shadow-pop-sm",
                     npcState === state
@@ -172,8 +155,7 @@ export function NPC() {
                 <button
                   key={text}
                   onClick={() => {
-                    setInput(text);
-                    handleSend();
+                    handleSend(text);
                   }}
                   className="w-full text-left p-3 rounded-pop border-3 border-pop-black/20 hover:border-pop-black hover:bg-pop-yellow/20 font-bold text-pop-black transition-all"
                 >
@@ -215,7 +197,7 @@ export function NPC() {
                     "text-xs mt-1 font-bold",
                     message.role === 'user' ? "text-pop-black/50" : "text-pop-black/40"
                   )}>
-                    {message.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
               </div>
@@ -235,7 +217,7 @@ export function NPC() {
                 className="pop-input flex-1"
               />
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!input.trim()}
                 className={cn(
                   "pop-btn !px-5 !py-3",

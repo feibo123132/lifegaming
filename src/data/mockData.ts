@@ -1,5 +1,5 @@
-import type { Task, SleepRecord, DietRecord, ExerciseRecord, VideoProject, Reward, WeeklyReport } from '../types';
-import { generateId } from '../utils/helpers';
+import type { Task, SleepRecord, DietRecord, ExerciseRecord, VideoProject, Reward, WeeklyReport } from '../types/index.ts';
+import { generateId } from '../utils/helpers.ts';
 
 // 当前用户数据
 export const currentUser = {

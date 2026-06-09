@@ -10,6 +10,7 @@ import { Shop } from './pages/Shop';
 import { Review } from './pages/Review';
 import { LoginPage } from './pages/LoginPage';
 import { useAuthStore } from './store/useAuthStore';
+import { useGameStore } from './store/useGameStore';
 import type { TabType } from './types';
 
 function AuthenticatedGame() {
@@ -43,10 +44,25 @@ function AuthenticatedGame() {
 
 function App() {
   const initAuth = useAuthStore((state) => state.initAuth);
+  const user = useAuthStore((state) => state.user);
+  const isAuthLoading = useAuthStore((state) => state.isLoading);
+  const syncFromCloud = useGameStore((state) => state.syncFromCloud);
+  const clearLocalGameData = useGameStore((state) => state.clearLocalData);
 
   useEffect(() => {
     initAuth();
   }, [initAuth]);
+
+  useEffect(() => {
+    if (isAuthLoading) return;
+
+    if (user?.email) {
+      syncFromCloud(user.email);
+      return;
+    }
+
+    clearLocalGameData();
+  }, [clearLocalGameData, isAuthLoading, syncFromCloud, user]);
 
   return (
     <Routes>

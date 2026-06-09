@@ -11,32 +11,26 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { rewards, currentUser } from '../data/mockData';
+import { rewards } from '../data/mockData';
+import { useGameStore } from '../store/useGameStore';
 
 export function Shop() {
-  const [userPoints, setUserPoints] = useState(currentUser.totalPoints);
-  const [redeemedIds, setRedeemedIds] = useState<string[]>(
-    rewards.filter(r => r.redeemed).map(r => r.id)
-  );
+  const userPoints = useGameStore((state) => state.userPoints);
+  const redeemedIds = useGameStore((state) => state.redeemedRewardIds);
+  const redeemHistory = useGameStore((state) => state.redeemHistory);
+  const redeemReward = useGameStore((state) => state.redeemReward);
   const [showAnimation, setShowAnimation] = useState(false);
   const [lastRedeemed, setLastRedeemed] = useState('');
 
-  const handleRedeem = (rewardId: string, name: string) => {
+  const handleRedeem = async (rewardId: string, name: string) => {
     const reward = rewards.find(r => r.id === rewardId);
     if (!reward || redeemedIds.includes(rewardId)) return;
 
-    if (userPoints >= reward.points) {
-      setUserPoints(prev => prev - reward.points);
-      setRedeemedIds(prev => [...prev, rewardId]);
+    if (await redeemReward(rewardId, name, reward.points)) {
       setLastRedeemed(name);
       setShowAnimation(true);
     }
   };
-
-  const redeemHistory = [
-    { name: '电影之夜', date: '2026-04-01', points: 100 },
-    { name: '咖啡券', date: '2026-03-28', points: 50 },
-  ];
 
   return (
     <div className="space-y-6">
@@ -141,9 +135,9 @@ export function Shop() {
         
         {redeemHistory.length > 0 ? (
           <div className="space-y-3">
-            {redeemHistory.map((item, index) => (
+            {redeemHistory.map((item) => (
               <div
-                key={index}
+                key={item.id}
                 className="pop-list-item !mb-2 flex items-center justify-between"
               >
                 <div>

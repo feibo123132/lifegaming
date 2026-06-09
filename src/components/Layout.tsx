@@ -18,6 +18,7 @@ import {
 import { cn } from '../utils/helpers';
 import { currentUser } from '../data/mockData';
 import { useAuthStore } from '../store/useAuthStore';
+import { useGameStore } from '../store/useGameStore';
 import type { TabType } from '../types';
 
 interface LayoutProps {
@@ -38,6 +39,8 @@ const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { user, logout } = useAuthStore();
+  const userPoints = useGameStore((state) => state.userPoints);
+  const isSyncing = useGameStore((state) => state.isSyncing);
   
   const progressPercent = (currentUser.exp / currentUser.maxExp) * 100;
   const displayName = user?.email?.split('@')[0] || currentUser.name;
@@ -113,6 +116,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                   <div className="min-w-0">
                     <p className="text-xs font-black text-pop-black">个人身份认证</p>
                     <p className="text-xs font-bold text-pop-black/60 truncate">{displayEmail}</p>
+                    <p className="text-xs font-black text-pop-green">{isSyncing ? '同步中...' : '多端同步已开启'}</p>
                   </div>
                 </div>
                 <button
@@ -144,7 +148,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                 <span className="font-bold text-pop-black">可用积分</span>
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-pop-red" />
-                  <span className="font-black text-xl text-pop-red">{currentUser.totalPoints}</span>
+                  <span className="font-black text-xl text-pop-red">{userPoints}</span>
                 </div>
               </div>
 

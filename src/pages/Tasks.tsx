@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame } from 'lucide-react';
 import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
-import { initialTasks } from '../data/mockData';
-import type { Task, ViewMode } from '../types';
+import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
+import { useGameStore } from '../store/useGameStore';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 
 export function Tasks() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const tasks = useGameStore((state) => state.tasks);
+  const toggleSyncedTask = useGameStore((state) => state.toggleTask);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [showAnimation, setShowAnimation] = useState(false);
@@ -22,22 +23,12 @@ export function Tasks() {
   const totalCount = tasks.length;
   const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  const toggleTask = (taskId: string) => {
-    setTasks(prev => prev.map(task => {
-      if (task.id === taskId) {
-        const newCompleted = !task.completed;
-        if (newCompleted && !task.completed) {
-          setLastPoints(task.points);
-          setShowAnimation(true);
-        }
-        return { 
-          ...task, 
-          completed: newCompleted,
-          completedAt: newCompleted ? new Date() : undefined
-        };
-      }
-      return task;
-    }));
+  const toggleTask = async (taskId: string) => {
+    const { awardedPoints } = await toggleSyncedTask(taskId);
+    if (awardedPoints > 0) {
+      setLastPoints(awardedPoints);
+      setShowAnimation(true);
+    }
   };
 
   const weekDates = getWeekDates();

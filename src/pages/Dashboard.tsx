@@ -13,22 +13,26 @@ import {
   Crown
 } from 'lucide-react';
 import { ProgressRing } from '../components/ProgressRing';
-import { currentUser, initialTasks, sleepRecords, exerciseRecords } from '../data/mockData';
+import { currentUser, sleepRecords, exerciseRecords } from '../data/mockData';
 import { cn, formatDate } from '../utils/helpers';
-
-const stats = [
-  { label: '今日任务', value: '5/7', icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
-  { label: '获得积分', value: '+85', icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
-  { label: '连续打卡', value: '15天', icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
-  { label: '本周排名', value: 'Top 12%', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
-];
+import { useGameStore } from '../store/useGameStore';
 
 export function Dashboard() {
-  const completedTasks = initialTasks.filter(t => t.completed).length;
-  const totalTasks = initialTasks.length;
+  const tasks = useGameStore((state) => state.tasks);
+  const userPoints = useGameStore((state) => state.userPoints);
+  const isSyncing = useGameStore((state) => state.isSyncing);
+  const syncError = useGameStore((state) => state.syncError);
+  const completedTasks = tasks.filter(t => t.completed).length;
+  const totalTasks = tasks.length;
   const taskProgress = (completedTasks / totalTasks) * 100;
   
   const todaySleep = sleepRecords[sleepRecords.length - 1];
+  const stats = [
+    { label: '今日任务', value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
+    { label: '可用积分', value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
+    { label: '连续打卡', value: '15天', icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
+    { label: '本周排名', value: 'Top 12%', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
+  ];
 
   return (
     <div className="space-y-6">
@@ -40,6 +44,9 @@ export function Dashboard() {
             <span className="text-3xl animate-bounce">👋</span>
           </div>
           <p className="text-pop-black/70 font-bold mt-1">{formatDate(new Date())}</p>
+          <p className={cn("mt-2 text-sm font-black", syncError ? "text-pop-red" : "text-pop-black/50")}>
+            {syncError ? `云端同步异常：${syncError}` : isSyncing ? '正在同步云端数据...' : '云端同步已就绪'}
+          </p>
         </div>
         <div className="pop-tag-yellow text-lg">
           <Flame className="w-5 h-5 mr-1 inline" />

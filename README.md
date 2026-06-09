@@ -51,6 +51,54 @@ https://github.com/feibo123132/lifegaming
 https://feibo123132.github.io/lifegaming/
 ```
 
+## ☁️ 腾讯云开发数据同步
+
+本项目使用腾讯云开发 CloudBase 的身份认证和数据库完成多端同步。用户使用同一个邮箱登录后，任务完成状态、可用积分、奖励兑换记录、NPC 对话会同步到同一份云端数据。
+
+### 云端集合
+
+在云开发控制台的数据库中创建集合：
+
+```text
+lifegaming_user_states
+```
+
+每个邮箱用户会在该集合中维护一条文档，核心字段包括：
+
+```ts
+{
+  userId: "your-email@example.com",
+  version: 1,
+  data: {
+    tasks: [],
+    userPoints: 1580,
+    redeemedRewardIds: [],
+    redeemHistory: [],
+    npcMessages: [],
+    npcState: "working",
+    updatedAt: "2026-06-09T00:00:00.000Z"
+  },
+  updateTime: "2026-06-09T00:00:00.000Z",
+  createTime: "2026-06-09T00:00:00.000Z"
+}
+```
+
+### 环境变量
+
+本地开发可创建 `.env.local`：
+
+```bash
+VITE_CLOUDBASE_ENV_ID=你的环境ID
+VITE_CLOUDBASE_REGION=ap-shanghai
+```
+
+GitHub Actions 部署时，在仓库 `Settings -> Secrets and variables -> Actions -> Variables` 添加：
+
+```text
+VITE_CLOUDBASE_ENV_ID = 你的环境ID
+VITE_CLOUDBASE_REGION = ap-shanghai
+```
+
 ## 📁 项目结构
 
 ```
