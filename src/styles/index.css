@@ -1,0 +1,216 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-pop-black;
+  }
+  body {
+    @apply bg-pop-yellow text-pop-black;
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-image: 
+      radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 107, 157, 0.2) 0%, transparent 40%),
+      radial-gradient(circle at 40% 80%, rgba(72, 219, 251, 0.2) 0%, transparent 40%);
+  }
+}
+
+@layer components {
+  /* 波普艺术卡片 */
+  .pop-card {
+    @apply bg-white rounded-pop border-4 border-pop-black shadow-pop;
+    transition: all 0.2s ease;
+  }
+  
+  .pop-card:hover {
+    @apply shadow-pop-hover;
+    transform: translate(-2px, -2px);
+  }
+  
+  .pop-card:active {
+    @apply shadow-pop-active;
+    transform: translate(2px, 2px);
+  }
+
+  /* 波普艺术按钮 */
+  .pop-btn {
+    @apply px-6 py-3 bg-pop-yellow border-4 border-pop-black rounded-pop font-bold text-pop-black shadow-pop;
+    transition: all 0.15s ease;
+  }
+  
+  .pop-btn:hover {
+    @apply shadow-pop-hover bg-pop-yellowLight;
+    transform: translate(-2px, -2px);
+  }
+  
+  .pop-btn:active {
+    @apply shadow-pop-active;
+    transform: translate(2px, 2px);
+  }
+
+  .pop-btn-red {
+    @apply pop-btn bg-pop-red text-white;
+  }
+  
+  .pop-btn-red:hover {
+    @apply bg-pop-redDark;
+  }
+
+  .pop-btn-blue {
+    @apply pop-btn bg-pop-blue text-white;
+  }
+  
+  .pop-btn-blue:hover {
+    @apply bg-pop-blueLight;
+  }
+
+  .pop-btn-green {
+    @apply pop-btn bg-pop-green text-white;
+  }
+  
+  .pop-btn-green:hover {
+    @apply bg-pop-greenDark;
+  }
+
+  /* 波普艺术标签 */
+  .pop-tag {
+    @apply inline-flex items-center px-3 py-1 bg-white border-[3px] border-pop-black rounded-full text-sm font-bold;
+  }
+  
+  .pop-tag-yellow {
+    @apply pop-tag bg-pop-yellow;
+  }
+  
+  .pop-tag-red {
+    @apply pop-tag bg-pop-red text-white;
+  }
+  
+  .pop-tag-blue {
+    @apply pop-tag bg-pop-blue text-white;
+  }
+  
+  .pop-tag-green {
+    @apply pop-tag bg-pop-green text-white;
+  }
+
+  /* 波普艺术输入框 */
+  .pop-input {
+    @apply w-full px-4 py-3 bg-white border-4 border-pop-black rounded-pop font-medium;
+    transition: all 0.2s ease;
+  }
+  
+  .pop-input:focus {
+    @apply outline-none;
+    box-shadow: 4px 4px 0px 0px #1A1A1A;
+    transform: translate(-2px, -2px);
+  }
+
+  /* 波普艺术进度条 */
+  .pop-progress {
+    @apply h-6 bg-white border-4 border-pop-black rounded-full overflow-hidden;
+  }
+  
+  .pop-progress-bar {
+    @apply h-full bg-pop-yellow border-r-4 border-pop-black;
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(0,0,0,0.1) 10px,
+      rgba(0,0,0,0.1) 20px
+    );
+  }
+
+  /* 波普艺术切换按钮组 */
+  .pop-switch {
+    @apply flex bg-white border-4 border-pop-black rounded-pop p-1;
+  }
+  
+  .pop-switch-btn {
+    @apply flex-1 px-4 py-2 rounded-pop font-bold text-pop-black transition-all;
+  }
+  
+  .pop-switch-btn.active {
+    @apply bg-pop-black text-pop-yellow;
+  }
+
+  /* 波普艺术图标容器 */
+  .pop-icon-box {
+    @apply w-14 h-14 bg-white border-4 border-pop-black rounded-pop-lg flex items-center justify-center shadow-pop-sm;
+  }
+
+  /* 波普艺术列表项 */
+  .pop-list-item {
+    @apply bg-white border-4 border-pop-black rounded-pop p-4 mb-3 shadow-pop-sm;
+    transition: all 0.15s ease;
+  }
+  
+  .pop-list-item:hover {
+    @apply shadow-pop;
+    transform: translate(-2px, -2px);
+  }
+
+  /* 装饰性圆点图案 */
+  .pop-dots {
+    background-image: radial-gradient(circle, #1A1A1A 2px, transparent 2px);
+    background-size: 12px 12px;
+  }
+  
+  .pop-dots-yellow {
+    background-image: radial-gradient(circle, #FFD93D 3px, transparent 3px);
+    background-size: 16px 16px;
+  }
+
+  /* 标题样式 */
+  .pop-title {
+    @apply text-3xl font-extrabold text-pop-black;
+    text-shadow: 3px 3px 0px rgba(0,0,0,0.1);
+  }
+  
+  .pop-title-lg {
+    @apply text-4xl font-black text-pop-black;
+    text-shadow: 4px 4px 0px rgba(0,0,0,0.15);
+  }
+
+  /* 渐变背景 */
+  .pop-gradient-yellow {
+    background: linear-gradient(135deg, #FFD93D 0%, #FFE066 50%, #FFD93D 100%);
+  }
+  
+  .pop-gradient-red {
+    background: linear-gradient(135deg, #FF4757 0%, #FF6B6B 50%, #FF4757 100%);
+  }
+  
+  .pop-gradient-blue {
+    background: linear-gradient(135deg, #4834DF 0%, #5A4EE0 50%, #4834DF 100%);
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #FFD93D;
+  border-left: 3px solid #1A1A1A;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1A1A1A;
+  border: 2px solid #FFD93D;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #333;
+}
+
+/* 选中文字样式 */
+::selection {
+  background: #FF4757;
+  color: white;
+}
