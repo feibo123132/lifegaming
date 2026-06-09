@@ -1,27 +1,43 @@
-import { useState } from 'react';
-import { Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame } from 'lucide-react';
+import { type FormEvent, type MouseEvent, useState } from 'react';
+import { Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
+import { sortTasksForDisplay } from '../lib/gameSync';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 
 export function Tasks() {
   const tasks = useGameStore((state) => state.tasks);
   const toggleSyncedTask = useGameStore((state) => state.toggleTask);
+  const addSyncedTask = useGameStore((state) => state.addTask);
+  const editSyncedTask = useGameStore((state) => state.editTask);
+  const deleteSyncedTask = useGameStore((state) => state.deleteTask);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskCategory, setNewTaskCategory] = useState<Exclude<CategoryFilter, 'all'>>('daily');
+  const [newTaskPoints, setNewTaskPoints] = useState(10);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingPoints, setEditingPoints] = useState(10);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [showAnimation, setShowAnimation] = useState(false);
   const [lastPoints, setLastPoints] = useState(0);
 
-  const filteredTasks = tasks.filter(task => 
+  const sortedTasks = sortTasksForDisplay(tasks);
+  const filteredTasks = sortedTasks.filter(task => 
     categoryFilter === 'all' || task.category === categoryFilter
   );
 
   const completedCount = tasks.filter(t => t.completed).length;
   const totalCount = tasks.length;
   const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const todayLabel = new Date().toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
   const toggleTask = async (taskId: string) => {
     const { awardedPoints } = await toggleSyncedTask(taskId);
@@ -31,13 +47,60 @@ export function Tasks() {
     }
   };
 
+  const addTask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const created = await addSyncedTask({
+      title: newTaskTitle,
+      category: newTaskCategory,
+      points: newTaskPoints
+    });
+
+    if (created) {
+      setNewTaskTitle('');
+      setNewTaskPoints(10);
+    }
+  };
+
+  const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
+    event.stopPropagation();
+    await deleteSyncedTask(taskId);
+  };
+
+  const startEditingTask = (event: MouseEvent<HTMLButtonElement>, task: (typeof tasks)[number]) => {
+    event.stopPropagation();
+    setEditingTaskId(task.id);
+    setEditingTitle(task.title);
+    setEditingPoints(task.points);
+  };
+
+  const cancelEditingTask = (event?: MouseEvent<HTMLButtonElement>) => {
+    event?.stopPropagation();
+    setEditingTaskId(null);
+    setEditingTitle('');
+    setEditingPoints(10);
+  };
+
+  const saveEditingTask = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!editingTaskId) return;
+
+    const updated = await editSyncedTask(editingTaskId, {
+      title: editingTitle,
+      points: editingPoints
+    });
+
+    if (updated) {
+      cancelEditingTask();
+    }
+  };
+
   const weekDates = getWeekDates();
 
   // Mock week data
   const weekData = weekDates.map((date, index) => ({
     date,
-    completed: [3, 5, 4, 6, 2, 5, completedCount][index] || 4,
-    total: 7,
+    completed: index === 6 ? completedCount : 0,
+    total: index === 6 ? totalCount : 0,
     isToday: date.toDateString() === new Date().toDateString(),
   }));
 
@@ -53,13 +116,79 @@ export function Tasks() {
 
   const renderDayView = () => (
     <>
+      <form onSubmit={addTask} className="pop-card bg-white !p-4 mb-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="flex-1">
+            <label className="mb-2 block text-sm font-black text-pop-black">任务名称</label>
+            <input
+              value={newTaskTitle}
+              onChange={(event) => setNewTaskTitle(event.target.value)}
+              className="pop-input w-full"
+              placeholder="今天要完成什么？"
+              maxLength={40}
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-black text-pop-black">类型</label>
+            <div className="grid grid-cols-3 gap-2 rounded-pop border-4 border-pop-black bg-white p-1 shadow-pop-sm">
+              {([
+                { key: 'main', label: '主线' },
+                { key: 'side', label: '支线' },
+                { key: 'daily', label: '日常' }
+              ] as const).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setNewTaskCategory(item.key)}
+                  className={cn(
+                    "rounded-pop px-3 py-2 text-sm font-black transition-all",
+                    newTaskCategory === item.key
+                      ? cn(
+                        "shadow-pop-sm",
+                        item.key === 'main' && "bg-pop-yellow text-pop-black",
+                        item.key === 'side' && "bg-pop-blue text-white",
+                        item.key === 'daily' && "bg-pop-green text-white"
+                      )
+                      : "text-pop-black hover:bg-white"
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-full lg:w-28">
+            <label className="mb-2 block text-sm font-black text-pop-black">积分</label>
+            <input
+              value={newTaskPoints}
+              onChange={(event) => setNewTaskPoints(Number(event.target.value))}
+              className="pop-input w-full text-center"
+              type="number"
+              min={1}
+              max={999}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={!newTaskTitle.trim()}
+            className="pop-btn-primary flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-5 w-5" />
+            添加
+          </button>
+        </div>
+      </form>
+
       {/* Category Filter */}
       <div className="flex gap-3 overflow-x-auto pb-2">
         {([
           { key: 'all', label: '全部', color: 'bg-pop-black text-white' },
-          { key: 'main', label: '主线', color: 'bg-pop-blue text-white' },
-          { key: 'side', label: '支线', color: 'bg-pop-green text-white' },
-          { key: 'daily', label: '日常', color: 'bg-pop-purple text-white' },
+          { key: 'main', label: '主线', color: 'bg-pop-yellow text-pop-black' },
+          { key: 'side', label: '支线', color: 'bg-pop-blue text-white' },
+          { key: 'daily', label: '日常', color: 'bg-pop-green text-white' },
         ] as const).map((cat) => (
           <button
             key={cat.key}
@@ -78,12 +207,27 @@ export function Tasks() {
 
       {/* Task List */}
       <div className="space-y-3">
+        {filteredTasks.length === 0 && (
+          <div className="pop-card bg-white p-8 text-center">
+            <div className="pop-icon-box mx-auto mb-4 h-16 w-16 bg-pop-yellow">
+              <Target className="h-8 w-8 text-pop-black" />
+            </div>
+            <p className="text-xl font-black text-pop-black">暂无任务</p>
+            <p className="mt-2 text-sm font-bold text-pop-black/60">添加一个任务后，它会在这里出现。</p>
+          </div>
+        )}
+
         {filteredTasks.map((task) => (
           <div
             key={task.id}
-            onClick={() => toggleTask(task.id)}
+            onClick={() => {
+              if (editingTaskId !== task.id) {
+                void toggleTask(task.id);
+              }
+            }}
             className={cn(
-              "pop-list-item cursor-pointer",
+              "pop-list-item",
+              editingTaskId === task.id ? "cursor-default" : "cursor-pointer",
               task.completed && "bg-pop-green/20 border-pop-green"
             )}
           >
@@ -101,9 +245,9 @@ export function Tasks() {
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className={cn(
                     "pop-tag text-xs",
-                    task.category === 'main' && "bg-pop-blue text-white",
-                    task.category === 'side' && "bg-pop-green text-white",
-                    task.category === 'daily' && "bg-pop-purple text-white"
+                    task.category === 'main' && "bg-pop-yellow text-pop-black",
+                    task.category === 'side' && "bg-pop-blue text-white",
+                    task.category === 'daily' && "bg-pop-green text-white"
                   )}>
                     {CATEGORY_LABELS[task.category]}
                   </span>
@@ -114,23 +258,90 @@ export function Tasks() {
                     </span>
                   )}
                 </div>
-                <p className={cn(
-                  "font-bold text-lg transition-colors",
-                  task.completed ? "text-pop-black/40 line-through" : "text-pop-black"
-                )}>
-                  {task.title}
-                </p>
+                {editingTaskId === task.id ? (
+                  <input
+                    value={editingTitle}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    className="pop-input !px-3 !py-2 text-lg font-bold"
+                    maxLength={40}
+                  />
+                ) : (
+                  <p className={cn(
+                    "font-bold text-lg transition-colors",
+                    task.completed ? "text-pop-black/40 line-through" : "text-pop-black"
+                  )}>
+                    {task.title}
+                  </p>
+                )}
               </div>
 
               <div className="text-right">
-                <div className={cn(
-                  "pop-tag text-base",
-                  task.completed ? "bg-pop-green text-white" : "bg-pop-yellow"
-                )}>
-                  <Star className="w-4 h-4 mr-1 inline" />
-                  {task.points}分
-                </div>
+                {editingTaskId === task.id ? (
+                  <input
+                    value={editingPoints}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setEditingPoints(Number(event.target.value))}
+                    className="pop-input w-24 !px-3 !py-2 text-center font-black"
+                    type="number"
+                    min={1}
+                    max={999}
+                  />
+                ) : (
+                  <div className={cn(
+                    "pop-tag text-base",
+                    task.completed ? "bg-pop-green text-white" : "bg-pop-yellow"
+                  )}>
+                    <Star className="w-4 h-4 mr-1 inline" />
+                    {task.points}分
+                  </div>
+                )}
               </div>
+
+              {editingTaskId === task.id ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveEditingTask}
+                    disabled={!editingTitle.trim()}
+                    className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-pop-green text-white shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={`保存任务：${task.title}`}
+                    title="保存"
+                  >
+                    <Check className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditingTask}
+                    className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-white text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+                    aria-label={`取消编辑：${task.title}`}
+                    title="取消"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(event) => startEditingTask(event, task)}
+                    className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-white text-pop-blue shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-pop-blue hover:text-white hover:shadow-pop"
+                    aria-label={`编辑任务：${task.title}`}
+                    title="编辑任务"
+                  >
+                    <Pencil className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => deleteTask(event, task.id)}
+                    className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-white text-pop-red shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-pop-red hover:text-white hover:shadow-pop"
+                    aria-label={`删除任务：${task.title}`}
+                    title="删除任务"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -163,7 +374,7 @@ export function Tasks() {
               <div className="pop-progress h-2 !border-2">
                 <div 
                   className="pop-progress-bar !border-r-2"
-                  style={{ width: `${(day.completed / day.total) * 100}%` }}
+                  style={{ width: `${day.total > 0 ? (day.completed / day.total) * 100 : 0}%` }}
                 />
               </div>
               <p className="text-xs font-bold text-pop-black/60">
@@ -202,15 +413,15 @@ export function Tasks() {
         </h3>
         <div className="space-y-3">
           {[
-            { name: '主线任务', count: 5, color: 'bg-pop-blue', icon: Target },
-            { name: '支线任务', count: 12, color: 'bg-pop-green', icon: TrendingUp },
-            { name: '日常任务', count: 21, color: 'bg-pop-purple', icon: Calendar },
+            { name: '主线任务', count: tasks.filter(task => task.category === 'main').length, color: 'bg-pop-yellow', icon: Target },
+            { name: '支线任务', count: tasks.filter(task => task.category === 'side').length, color: 'bg-pop-blue', icon: TrendingUp },
+            { name: '日常任务', count: tasks.filter(task => task.category === 'daily').length, color: 'bg-pop-green', icon: Calendar },
           ].map((item) => {
             const Icon = item.icon;
             return (
               <div key={item.name} className="flex items-center gap-3 bg-white border-3 border-pop-black rounded-pop p-3">
                 <div className={cn("w-10 h-10 rounded-pop border-3 border-pop-black flex items-center justify-center", item.color)}>
-                  <Icon className="w-5 h-5 text-white" />
+                  <Icon className={cn("w-5 h-5", item.color === 'bg-pop-yellow' ? "text-pop-black" : "text-white")} />
                 </div>
                 <span className="flex-1 font-bold text-pop-black">{item.name}</span>
                 <span className="pop-tag bg-pop-yellow font-black">{item.count}个</span>
@@ -227,10 +438,10 @@ export function Tasks() {
       {/* Month Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: '完成天数', value: '22/30', icon: Calendar, color: 'bg-pop-yellow' },
-          { label: '平均完成率', value: '78%', icon: TrendingUp, color: 'bg-pop-green' },
-          { label: '主线完成', value: '8/10', icon: Target, color: 'bg-pop-blue' },
-          { label: '专注时长', value: '45h', icon: Sparkles, color: 'bg-pop-red' },
+          { label: '完成天数', value: '0/0', icon: Calendar, color: 'bg-pop-yellow' },
+          { label: '平均完成率', value: `${completionRate.toFixed(0)}%`, icon: TrendingUp, color: 'bg-pop-green' },
+          { label: '主线完成', value: `${tasks.filter(task => task.category === 'main' && task.completed).length}/${tasks.filter(task => task.category === 'main').length}`, icon: Target, color: 'bg-pop-blue' },
+          { label: '专注时长', value: '0h', icon: Sparkles, color: 'bg-pop-red' },
         ].map((stat, i) => {
           const Icon = stat.icon;
           return (
@@ -283,9 +494,9 @@ export function Tasks() {
         <h3 className="font-black text-xl text-pop-black mb-4">任务类型分布</h3>
         <div className="space-y-4">
           {[
-            { name: '主线任务', completed: 8, total: 10, color: 'bg-pop-blue' },
-            { name: '支线任务', completed: 18, total: 24, color: 'bg-pop-green' },
-            { name: '日常任务', completed: 52, total: 60, color: 'bg-pop-purple' },
+            { name: '主线任务', completed: tasks.filter(task => task.category === 'main' && task.completed).length, total: tasks.filter(task => task.category === 'main').length, color: 'bg-pop-yellow' },
+            { name: '支线任务', completed: tasks.filter(task => task.category === 'side' && task.completed).length, total: tasks.filter(task => task.category === 'side').length, color: 'bg-pop-blue' },
+            { name: '日常任务', completed: tasks.filter(task => task.category === 'daily' && task.completed).length, total: tasks.filter(task => task.category === 'daily').length, color: 'bg-pop-green' },
           ].map((item) => (
             <div key={item.name}>
               <div className="flex justify-between text-sm font-bold mb-2">
@@ -295,7 +506,7 @@ export function Tasks() {
               <div className="pop-progress">
                 <div 
                   className={cn("pop-progress-bar", item.color)}
-                  style={{ width: `${(item.completed / item.total) * 100}%` }}
+                  style={{ width: `${item.total > 0 ? (item.completed / item.total) * 100 : 0}%` }}
                 />
               </div>
             </div>
@@ -332,19 +543,24 @@ export function Tasks() {
         </div>
         
         {/* View Mode Switcher - 波普艺术风格 */}
-        <div className="pop-switch">
-          {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              className={cn(
-                "pop-switch-btn",
-                viewMode === mode && "active"
-              )}
-            >
-              {mode === 'day' ? '天' : mode === 'week' ? '周' : '月'}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <span className="pop-tag bg-white text-pop-black">
+            {todayLabel}
+          </span>
+          <div className="pop-switch">
+            {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  "pop-switch-btn",
+                  viewMode === mode && "active"
+                )}
+              >
+                {mode === 'day' ? '天' : mode === 'week' ? '周' : '月'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -3,10 +3,21 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { db } from '../lib/cloudbase';
 import {
   buildCloudGameState,
+  createUserTask,
   createInitialGameData,
+  getCloudSyncErrorMessage,
   mergeGameData,
   normalizeUserEmail,
+  pickLatestCloudGameDoc,
+  reconcileGameDataPoints,
+  resetExampleGameData,
+  getTaskAwardedPoints,
+  toggleUserTaskCompletion,
+  updateUserTask,
+  type CloudGameStateDocument,
+  type EditTaskInput,
   type GameData,
+  type NewTaskInput,
   type SyncedNpcMessage
 } from '../lib/gameSync';
 
@@ -20,6 +31,9 @@ interface GameStoreState extends GameData {
   syncFromCloud: (email: string) => Promise<void>;
   syncToCloud: () => Promise<void>;
   clearLocalData: () => void;
+  addTask: (input: NewTaskInput) => Promise<boolean>;
+  editTask: (taskId: string, input: EditTaskInput) => Promise<boolean>;
+  deleteTask: (taskId: string) => Promise<boolean>;
   toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
   redeemReward: (rewardId: string, rewardName: string, points: number) => Promise<boolean>;
   setNpcState: (state: NpcState) => Promise<void>;
@@ -73,27 +87,36 @@ export const useGameStore = create<GameStoreState>()(
         try {
           const collection = db.collection(COLLECTION_NAME);
           const query = collection.where({ userId });
-          const result = await query.limit(1).get();
-          const cloudDoc = result.data?.[0] as { _id?: string; data?: GameData } | undefined;
+          const result = await query.limit(20).get();
+          const cloudDoc = pickLatestCloudGameDoc(result.data as CloudGameStateDocument[] | undefined);
 
           if (!cloudDoc?.data) {
             const now = new Date().toISOString();
+            const cleanSnapshot = resetExampleGameData({ ...localSnapshot, updatedAt: now });
+            set({ ...cleanSnapshot, syncError: null });
             await collection.add({
-              ...buildCloudGameState(userId, { ...localSnapshot, updatedAt: now }, now),
+              ...buildCloudGameState(userId, cleanSnapshot, now),
               createTime: now
             });
             return;
           }
 
           const merged = mergeGameData(localSnapshot, cloudDoc.data);
-          set(merged);
+          set({ ...merged, syncError: null });
 
           if (merged.updatedAt !== cloudDoc.data.updatedAt) {
-            await query.update(buildCloudGameState(userId, merged));
+            const document = buildCloudGameState(userId, merged);
+            if (cloudDoc._id) {
+              await collection.doc(cloudDoc._id).update(document);
+            } else {
+              await query.update(document);
+            }
           }
         } catch (err: any) {
           console.error('Game cloud sync failed:', err);
-          set({ syncError: err?.message || '云端同步失败，请检查数据库集合、权限和安全域名配置' });
+          set({
+            syncError: getCloudSyncErrorMessage(err, '云端同步失败，请检查数据库集合、权限和安全域名配置')
+          });
         } finally {
           set({ isSyncing: false });
         }
@@ -117,21 +140,63 @@ export const useGameStore = create<GameStoreState>()(
         try {
           const collection = db.collection(COLLECTION_NAME);
           const query = collection.where({ userId });
-          const count = await query.count();
+          const result = await query.limit(20).get();
+          const cloudDoc = pickLatestCloudGameDoc(result.data as CloudGameStateDocument[] | undefined);
           const document = buildCloudGameState(userId, data);
 
-          if (count.total > 0) {
-            await query.update(document);
+          if (cloudDoc?._id) {
+            await collection.doc(cloudDoc._id).update(document);
           } else {
             await collection.add({
               ...document,
               createTime: document.updateTime
             });
           }
+
+          set({ syncError: null });
         } catch (err: any) {
           console.error('Game cloud upload failed:', err);
-          set({ syncError: err?.message || '云端保存失败，请稍后重试' });
+          set({
+            syncError: getCloudSyncErrorMessage(err, '云端保存失败，请稍后重试')
+          });
         }
+      },
+
+      addTask: async (input) => {
+        const task = createUserTask(input, `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        if (!task) return false;
+
+        set((state) => withUpdatedAt({
+          tasks: [task, ...state.tasks]
+        }));
+        await get().syncToCloud();
+        return true;
+      },
+
+      editTask: async (taskId, input) => {
+        const task = get().tasks.find((item) => item.id === taskId);
+        if (!task || !updateUserTask(task, input)) return false;
+
+        set((state) => withUpdatedAt({
+          tasks: state.tasks.map((item) => {
+            if (item.id !== taskId) return item;
+            return updateUserTask(item, input) || item;
+          })
+        }));
+        await get().syncToCloud();
+        return true;
+      },
+
+      deleteTask: async (taskId) => {
+        const task = get().tasks.find((item) => item.id === taskId);
+        if (!task) return false;
+
+        set((state) => withUpdatedAt({
+          tasks: state.tasks.filter((item) => item.id !== taskId),
+          userPoints: Math.max(0, state.userPoints - getTaskAwardedPoints(task))
+        }));
+        await get().syncToCloud();
+        return true;
       },
 
       toggleTask: async (taskId) => {
@@ -139,17 +204,11 @@ export const useGameStore = create<GameStoreState>()(
         set((state) => withUpdatedAt({
           tasks: state.tasks.map((task) => {
             if (task.id !== taskId) return task;
-            const completed = !task.completed;
-            if (completed && !task.completed) {
-              awardedPoints = task.points;
-            }
-            return {
-              ...task,
-              completed,
-              completedAt: completed ? new Date().toISOString() as unknown as Date : undefined
-            };
+            const result = toggleUserTaskCompletion(task);
+            awardedPoints = result.pointsDelta;
+            return result.task;
           }),
-          userPoints: state.userPoints + awardedPoints
+          userPoints: Math.max(0, state.userPoints + awardedPoints)
         }));
         await get().syncToCloud();
         return { awardedPoints };
@@ -205,7 +264,25 @@ export const useGameStore = create<GameStoreState>()(
         npcState: state.npcState,
         updatedAt: state.updatedAt,
         currentUserEmail: state.currentUserEmail
-      })
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<GameStoreState>;
+        const gameData = reconcileGameDataPoints({
+          tasks: persisted.tasks ?? currentState.tasks,
+          userPoints: persisted.userPoints ?? currentState.userPoints,
+          redeemedRewardIds: persisted.redeemedRewardIds ?? currentState.redeemedRewardIds,
+          redeemHistory: persisted.redeemHistory ?? currentState.redeemHistory,
+          npcMessages: persisted.npcMessages ?? currentState.npcMessages,
+          npcState: persisted.npcState ?? currentState.npcState,
+          updatedAt: persisted.updatedAt ?? currentState.updatedAt
+        });
+
+        return {
+          ...currentState,
+          ...persisted,
+          ...gameData
+        };
+      }
     }
   )
 );

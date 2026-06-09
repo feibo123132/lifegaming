@@ -4,6 +4,8 @@ export interface Task {
   category: 'main' | 'side' | 'daily';
   points: number;
   completed: boolean;
+  createdAt?: string;
+  completedPoints?: number;
   completedAt?: Date;
 }
 

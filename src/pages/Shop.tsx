@@ -68,6 +68,12 @@ export function Shop() {
 
       {/* Rewards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {rewards.length === 0 && (
+          <div className="pop-card col-span-full p-8 text-center">
+            <p className="text-xl font-black text-pop-black">暂无奖励</p>
+            <p className="mt-2 font-bold text-pop-black/60">示例奖励已清空，后续可添加你自己的奖励。</p>
+          </div>
+        )}
         {rewards.map((reward) => {
           const isRedeemed = redeemedIds.includes(reward.id);
           const canAfford = userPoints >= reward.points;
@@ -167,7 +173,7 @@ export function Shop() {
               <Flame className="w-6 h-6" />
               积分达人
             </h3>
-            <p className="font-bold text-white/90">已累计获得 1580 积分，超越 88% 的用户！</p>
+            <p className="font-bold text-white/90">还没有累计积分。完成任务后，这里会记录你的真实进度。</p>
           </div>
         </div>
       </div>

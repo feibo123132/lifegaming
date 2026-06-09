@@ -41,7 +41,7 @@ export function DataRecord() {
         </div>
         <div className="pop-tag bg-pop-yellow">
           <Star className="w-4 h-4 mr-1 inline" />
-          连续记录 15 天
+          连续记录 0 天
         </div>
       </div>
 
@@ -98,6 +98,9 @@ export function DataRecord() {
               最近7天睡眠记录
             </h3>
             <div className="space-y-3">
+              {sleepRecords.length === 0 && (
+                <p className="py-6 text-center font-bold text-pop-black/50">暂无睡眠记录</p>
+              )}
               {sleepRecords.map((record) => (
                 <div 
                   key={record.id}
@@ -130,9 +133,9 @@ export function DataRecord() {
           {/* Sleep Stats */}
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: '平均睡眠', value: '7.2', unit: 'h', color: 'bg-pop-purple' },
-              { label: '平均深睡', value: '2.1', unit: 'h', color: 'bg-pop-blue' },
-              { label: '平均质量', value: '82', unit: '分', color: 'bg-pop-green' },
+              { label: '平均睡眠', value: '0', unit: 'h', color: 'bg-pop-purple' },
+              { label: '平均深睡', value: '0', unit: 'h', color: 'bg-pop-blue' },
+              { label: '平均质量', value: '0', unit: '分', color: 'bg-pop-green' },
             ].map((stat, i) => (
               <div key={i} className="pop-card text-center !p-4">
                 <p className="text-sm font-bold text-pop-black/60 mb-1">{stat.label}</p>
@@ -162,6 +165,9 @@ export function DataRecord() {
             </div>
             
             <div className="space-y-3">
+              {dietRecords.length === 0 && (
+                <p className="py-6 text-center font-bold text-pop-black/50">暂无饮食记录</p>
+              )}
               {dietRecords.map((record) => (
                 <div 
                   key={record.id}
@@ -250,6 +256,9 @@ export function DataRecord() {
           <div className="pop-card">
             <h3 className="font-black text-xl text-pop-black mb-4">最近运动</h3>
             <div className="space-y-3">
+              {exerciseRecords.length === 0 && (
+                <p className="py-6 text-center font-bold text-pop-black/50">暂无运动记录</p>
+              )}
               {exerciseRecords.map((record) => (
                 <div 
                   key={record.id}
@@ -283,12 +292,12 @@ export function DataRecord() {
                 <Trophy className="w-6 h-6" />
                 本周运动目标
               </h3>
-              <span className="pop-tag bg-white text-pop-green font-black">3/5 次</span>
+              <span className="pop-tag bg-white text-pop-green font-black">0/5 次</span>
             </div>
             <div className="pop-progress bg-white/30 !border-white">
-              <div className="pop-progress-bar bg-white !border-white" style={{ width: '60%' }} />
+              <div className="pop-progress-bar bg-white !border-white" style={{ width: '0%' }} />
             </div>
-            <p className="font-bold mt-3">再运动 2 次即可达成本周目标！💪</p>
+            <p className="font-bold mt-3">还没有运动记录。</p>
           </div>
         </div>
       )}
@@ -308,6 +317,9 @@ export function DataRecord() {
 
           {/* Projects */}
           <div className="space-y-4">
+            {videoProjects.length === 0 && (
+              <p className="py-6 text-center font-bold text-pop-black/50">暂无视频项目</p>
+            )}
             {videoProjects.map((project) => (
               <div key={project.id} className="pop-card">
                 <div className="flex items-start justify-between mb-4">

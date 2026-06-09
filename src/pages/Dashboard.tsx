@@ -13,7 +13,7 @@ import {
   Crown
 } from 'lucide-react';
 import { ProgressRing } from '../components/ProgressRing';
-import { currentUser, sleepRecords, exerciseRecords } from '../data/mockData';
+import { currentUser, sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../data/mockData';
 import { cn, formatDate } from '../utils/helpers';
 import { useGameStore } from '../store/useGameStore';
 
@@ -24,14 +24,14 @@ export function Dashboard() {
   const syncError = useGameStore((state) => state.syncError);
   const completedTasks = tasks.filter(t => t.completed).length;
   const totalTasks = tasks.length;
-  const taskProgress = (completedTasks / totalTasks) * 100;
+  const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
   
   const todaySleep = sleepRecords[sleepRecords.length - 1];
   const stats = [
     { label: '今日任务', value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
     { label: '可用积分', value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
-    { label: '连续打卡', value: '15天', icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
-    { label: '本周排名', value: 'Top 12%', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
+    { label: '连续打卡', value: `${currentUser.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
+    { label: '本周排名', value: '暂无', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
   ];
 
   return (
@@ -173,7 +173,7 @@ export function Dashboard() {
             </div>
             <div>
               <h3 className="font-black text-lg text-pop-black">饮食</h3>
-              <p className="text-sm font-bold text-pop-black/60">今日 3 餐记录</p>
+              <p className="text-sm font-bold text-pop-black/60">今日 {dietRecords.length} 餐记录</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -196,22 +196,22 @@ export function Dashboard() {
           </div>
           <div className="flex-1">
             <h3 className="font-black text-lg text-pop-black">视频项目进度</h3>
-            <p className="text-sm font-bold text-pop-black/60">本月目标：发布10条视频</p>
+            <p className="text-sm font-bold text-pop-black/60">暂无视频目标</p>
           </div>
           <div className="pop-tag-red">
             <Flame className="w-4 h-4 mr-1 inline" />
-            30%
+            0%
           </div>
         </div>
         <div className="space-y-3">
           <div className="flex justify-between text-sm font-bold">
-            <span className="text-pop-black/70">已发布 3 条，进行中 3 条</span>
-            <span className="font-black text-pop-red">6/10</span>
+            <span className="text-pop-black/70">已创建 {videoProjects.length} 条视频项目</span>
+            <span className="font-black text-pop-red">0/0</span>
           </div>
           <div className="pop-progress h-6">
             <div 
               className="pop-progress-bar bg-pop-red"
-              style={{ width: '30%' }}
+              style={{ width: '0%' }}
             />
           </div>
         </div>
@@ -222,13 +222,13 @@ export function Dashboard() {
             <div key={stage} className="flex flex-col items-center">
               <div className={cn(
                 "w-8 h-8 rounded-full border-3 border-pop-black flex items-center justify-center font-bold text-sm",
-                i < 3 ? "bg-pop-green text-white" : i === 3 ? "bg-pop-yellow text-pop-black" : "bg-white text-pop-black/40"
+                "bg-white text-pop-black/40"
               )}>
-                {i < 3 ? '✓' : i + 1}
+                {i + 1}
               </div>
               <span className={cn(
                 "text-xs font-bold mt-1",
-                i < 3 ? "text-pop-green" : i === 3 ? "text-pop-yellow" : "text-pop-black/40"
+                "text-pop-black/40"
               )}>{stage}</span>
             </div>
           ))}
