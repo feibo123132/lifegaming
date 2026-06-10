@@ -9,6 +9,7 @@ import {
   ensureDailyTemplateTasks,
   filterTasksByDate,
   getCloudSyncErrorMessage,
+  getDefaultTaskPoints,
   getLevelExpRequirement,
   getLevelTitle,
   getLocalDateKey,
@@ -26,7 +27,7 @@ import {
   toggleUserTaskCompletion,
   updateUserTask
 } from '../src/lib/gameSync.ts';
-import { rewards } from '../src/data/mockData.ts';
+import { rewardCategories, rewards } from '../src/data/mockData.ts';
 
 test('normalizes email before using it as sync user id', () => {
   assert.equal(normalizeUserEmail('  ANGO@QQ.COM '), 'ango@qq.com');
@@ -61,6 +62,21 @@ test('ships example rewards for the points shop', () => {
   }
 });
 
+test('ships a grouped self-care reward catalog', () => {
+  const categoryIds = rewardCategories.map((category) => category.id);
+
+  assert.deepEqual(categoryIds, ['delight', 'recovery', 'escape', 'investment']);
+  assert.ok(rewards.length >= 16);
+
+  for (const categoryId of categoryIds) {
+    assert.ok(rewards.some((reward) => reward.category === categoryId));
+  }
+
+  for (const reward of rewards) {
+    assert.ok(categoryIds.includes(reward.category));
+  }
+});
+
 test('creates a clean user task from form input', () => {
   const task = createUserTask(
     { title: '  每天写复盘  ', category: 'daily', points: 15 },
@@ -76,6 +92,22 @@ test('creates a clean user task from form input', () => {
     completed: false,
     createdAt: '2026-06-09T01:00:00.000Z'
   });
+});
+
+test('returns default points for each task category', () => {
+  assert.equal(getDefaultTaskPoints('main'), 20);
+  assert.equal(getDefaultTaskPoints('side'), 15);
+  assert.equal(getDefaultTaskPoints('daily'), 10);
+});
+
+test('can bind a newly created task to its daily template', () => {
+  const task = createUserTask(
+    { title: 'Daily screen limit', category: 'daily', points: 10, templateId: 'daily-template-1' },
+    'task-1',
+    '2026-06-10T08:00:00.000'
+  );
+
+  assert.equal(task?.templateId, 'daily-template-1');
 });
 
 test('creates a task timestamp for the selected day', () => {
@@ -127,6 +159,71 @@ test('generates daily template tasks for a selected date without duplicates', ()
   assert.equal(filterTasksByDate(withTomorrow.tasks, '2026-06-11').length, 1);
   assert.equal(withTomorrow.tasks.length, 2);
   assert.equal(withTomorrow.tasks.every((task) => task.templateId === 'daily-template-1'), true);
+});
+
+test('deduplicates duplicate recurring task instances for the same selected date', () => {
+  const duplicateA = {
+    ...createUserTask(
+      { title: 'Daily screen limit', category: 'daily', points: 10 },
+      'task-a',
+      '2026-06-11T08:00:00.000'
+    )!,
+    templateId: 'daily-template-1'
+  };
+  const duplicateB = {
+    ...createUserTask(
+      { title: 'Daily screen limit', category: 'daily', points: 10 },
+      'task-b',
+      '2026-06-11T09:00:00.000'
+    )!,
+    templateId: 'daily-template-1'
+  };
+  const data = {
+    ...createInitialGameData('2026-06-10T00:00:00.000Z'),
+    tasks: [duplicateA, duplicateB],
+    dailyTemplates: [
+      {
+        id: 'daily-template-1',
+        title: 'Daily screen limit',
+        points: 10,
+        active: true,
+        createdAt: '2026-06-10T08:00:00.000'
+      }
+    ]
+  };
+
+  const cleaned = ensureDailyTemplateTasks(data, '2026-06-11', '2026-06-11T10:00:00.000');
+
+  assert.equal(filterTasksByDate(cleaned.tasks, '2026-06-11').length, 1);
+  assert.equal(filterTasksByDate(cleaned.tasks, '2026-06-11')[0].templateId, 'daily-template-1');
+});
+
+test('deduplicates duplicate daily templates with the same title and points', () => {
+  const data = {
+    ...createInitialGameData('2026-06-10T00:00:00.000Z'),
+    dailyTemplates: [
+      {
+        id: 'daily-template-newer',
+        title: 'Daily screen limit',
+        points: 10,
+        active: true,
+        createdAt: '2026-06-10T09:00:00.000'
+      },
+      {
+        id: 'daily-template-older',
+        title: 'Daily screen limit',
+        points: 10,
+        active: true,
+        createdAt: '2026-06-10T08:00:00.000'
+      }
+    ]
+  };
+
+  const generated = ensureDailyTemplateTasks(data, '2026-06-11', '2026-06-11T08:00:00.000');
+  const generatedTasks = filterTasksByDate(generated.tasks, '2026-06-11');
+
+  assert.equal(generatedTasks.length, 1);
+  assert.equal(generatedTasks[0].title, 'Daily screen limit');
 });
 
 test('does not generate daily template tasks before the template creation date', () => {

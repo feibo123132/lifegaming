@@ -195,8 +195,8 @@ export const LoginPage = () => {
                 <Flame className="h-7 w-7 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-black leading-none">设计人生</h1>
-                <p className="mt-1 text-sm font-black text-pop-black/60">游戏化自律系统</p>
+                <h1 className="text-3xl font-black leading-none">辛苦了，老己</h1>
+                <p className="mt-1 text-sm font-black text-pop-black/60">爱自己，是终身美丽的开始</p>
               </div>
             </div>
 

@@ -175,11 +175,14 @@ export const useGameStore = create<GameStoreState>()(
       },
 
       addTask: async (input) => {
-        const task = createUserTask(input, `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-        if (!task) return false;
         const template = input.category === 'daily' && input.saveAsDailyTemplate
           ? createDailyTemplate(input, `daily-template-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
           : null;
+        const task = createUserTask(
+          { ...input, templateId: template?.id },
+          `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        );
+        if (!task) return false;
 
         set((state) => withUpdatedAt({
           tasks: [task, ...state.tasks],

@@ -4,9 +4,11 @@ import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
-import { filterTasksByDate, getLocalDateKey, isRecurringDailyTask, sortTasksForDisplay } from '../lib/gameSync';
+import { filterTasksByDate, getDefaultTaskPoints, getLocalDateKey, isRecurringDailyTask, sortTasksForDisplay } from '../lib/gameSync';
+import { playTaskCompletionSound, shouldPlayTaskCompletionSound } from '../lib/taskCompletionSound';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
+type TaskCategory = Exclude<CategoryFilter, 'all'>;
 
 export function Tasks() {
   const tasks = useGameStore((state) => state.tasks);
@@ -17,8 +19,8 @@ export function Tasks() {
   const deleteSyncedTask = useGameStore((state) => state.deleteTask);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskCategory, setNewTaskCategory] = useState<Exclude<CategoryFilter, 'all'>>('daily');
-  const [newTaskPoints, setNewTaskPoints] = useState(10);
+  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('daily');
+  const [newTaskPoints, setNewTaskPoints] = useState(getDefaultTaskPoints('daily'));
   const [saveDailyTemplate, setSaveDailyTemplate] = useState(true);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -50,7 +52,8 @@ export function Tasks() {
 
   const toggleTask = async (taskId: string) => {
     const { awardedPoints } = await toggleSyncedTask(taskId);
-    if (awardedPoints > 0) {
+    if (shouldPlayTaskCompletionSound(awardedPoints)) {
+      playTaskCompletionSound();
       setLastPoints(awardedPoints);
       setShowAnimation(true);
     }
@@ -68,8 +71,13 @@ export function Tasks() {
 
     if (created) {
       setNewTaskTitle('');
-      setNewTaskPoints(10);
+      setNewTaskPoints(getDefaultTaskPoints(newTaskCategory));
     }
+  };
+
+  const selectNewTaskCategory = (category: TaskCategory) => {
+    setNewTaskCategory(category);
+    setNewTaskPoints(getDefaultTaskPoints(category));
   };
 
   const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
@@ -167,7 +175,7 @@ export function Tasks() {
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setNewTaskCategory(item.key)}
+                  onClick={() => selectNewTaskCategory(item.key)}
                   className={cn(
                     "rounded-pop px-3 py-2 text-sm font-black transition-all",
                     newTaskCategory === item.key

@@ -43,6 +43,7 @@ export interface NewTaskInput {
   points: number;
   dateKey?: string;
   saveAsDailyTemplate?: boolean;
+  templateId?: string;
 }
 
 export interface EditTaskInput {
@@ -70,6 +71,14 @@ const CATEGORY_PRIORITY: Record<Task['category'], number> = {
   side: 1,
   daily: 2
 };
+
+const DEFAULT_TASK_POINTS: Record<Task['category'], number> = {
+  main: 20,
+  side: 15,
+  daily: 10
+};
+
+export const getDefaultTaskPoints = (category: Task['category']): number => DEFAULT_TASK_POINTS[category];
 
 const CULTIVATION_REALMS = [
   '炼气期',
@@ -171,7 +180,8 @@ export const createUserTask = (
     category: input.category,
     points,
     completed: false,
-    createdAt: input.dateKey ? createTaskTimestampForDate(input.dateKey, now) : now
+    createdAt: input.dateKey ? createTaskTimestampForDate(input.dateKey, now) : now,
+    ...(input.category === 'daily' && input.templateId ? { templateId: input.templateId } : {})
   };
 };
 
@@ -341,6 +351,84 @@ export const filterTasksByDate = (tasks: Task[], dateKey: string): Task[] =>
 export const isRecurringDailyTask = (task: Task): boolean =>
   task.category === 'daily' && Boolean(task.templateId);
 
+const getDailyTemplateKey = (value: Pick<DailyTaskTemplate | Task, 'title' | 'points'>): string =>
+  `${value.title.trim().toLowerCase()}::${Math.max(1, Math.round(value.points || 1))}`;
+
+const pickRecurringTaskToKeep = (current: Task, candidate: Task): Task => {
+  if (candidate.completed && !current.completed) return candidate;
+  if (current.completed && !candidate.completed) return current;
+
+  return getTaskCreatedTime(candidate) < getTaskCreatedTime(current) ? candidate : current;
+};
+
+const dedupeRecurringTasks = (tasks: Task[]): Task[] => {
+  const preferredByKey = new Map<string, Task>();
+
+  for (const task of tasks) {
+    if (!isRecurringDailyTask(task)) continue;
+
+    const taskDateKey = getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+    const key = `${taskDateKey}::${getDailyTemplateKey(task)}`;
+    const current = preferredByKey.get(key);
+    preferredByKey.set(key, current ? pickRecurringTaskToKeep(current, task) : task);
+  }
+
+  if (!preferredByKey.size) return tasks;
+
+  const emittedKeys = new Set<string>();
+  const dedupedTasks: Task[] = [];
+
+  for (const task of tasks) {
+    if (!isRecurringDailyTask(task)) {
+      dedupedTasks.push(task);
+      continue;
+    }
+
+    const taskDateKey = getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+    const key = `${taskDateKey}::${getDailyTemplateKey(task)}`;
+    const preferredTask = preferredByKey.get(key);
+    if (emittedKeys.has(key) || preferredTask?.id !== task.id) continue;
+
+    emittedKeys.add(key);
+    dedupedTasks.push(task);
+  }
+
+  return dedupedTasks.length === tasks.length ? tasks : dedupedTasks;
+};
+
+const dedupeDailyTemplates = (templates: DailyTaskTemplate[]): DailyTaskTemplate[] => {
+  const preferredByKey = new Map<string, DailyTaskTemplate>();
+
+  for (const template of templates) {
+    if (!template.active) continue;
+
+    const key = getDailyTemplateKey(template);
+    const current = preferredByKey.get(key);
+    if (!current || getLocalDateKey(template.createdAt) < getLocalDateKey(current.createdAt)) {
+      preferredByKey.set(key, template);
+    }
+  }
+
+  const emittedKeys = new Set<string>();
+  const dedupedTemplates: DailyTaskTemplate[] = [];
+
+  for (const template of templates) {
+    if (!template.active) {
+      dedupedTemplates.push(template);
+      continue;
+    }
+
+    const key = getDailyTemplateKey(template);
+    const preferredTemplate = preferredByKey.get(key);
+    if (emittedKeys.has(key) || preferredTemplate?.id !== template.id) continue;
+
+    emittedKeys.add(key);
+    dedupedTemplates.push(template);
+  }
+
+  return dedupedTemplates;
+};
+
 export const ensureDailyTemplateTasks = (
   data: GameData,
   dateKey: string,
@@ -353,23 +441,24 @@ export const ensureDailyTemplateTasks = (
     if (!template) return true;
     return getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task))) >= getLocalDateKey(template.createdAt);
   });
-  const activeTemplates = data.dailyTemplates.filter(
+  const dedupedTasks = dedupeRecurringTasks(cleanedTasks);
+  const activeTemplates = dedupeDailyTemplates(data.dailyTemplates).filter(
     (template) => template.active && dateKey >= getLocalDateKey(template.createdAt)
   );
-  const hasCleanedTasks = cleanedTasks.length !== data.tasks.length;
+  const hasCleanedTasks = dedupedTasks.length !== data.tasks.length;
   if (!activeTemplates.length) {
     return hasCleanedTasks
-      ? reconcileGameDataPoints({ ...data, tasks: cleanedTasks, updatedAt: now }, now)
+      ? reconcileGameDataPoints({ ...data, tasks: dedupedTasks, updatedAt: now }, now)
       : data;
   }
 
-  const existingTemplateIds = new Set(
-    filterTasksByDate(cleanedTasks, dateKey)
-      .map((task) => task.templateId)
-      .filter((templateId): templateId is string => Boolean(templateId))
+  const existingTemplateKeys = new Set(
+    filterTasksByDate(dedupedTasks, dateKey)
+      .filter(isRecurringDailyTask)
+      .map(getDailyTemplateKey)
   );
   const tasksToAdd = activeTemplates
-    .filter((template) => !existingTemplateIds.has(template.id))
+    .filter((template) => !existingTemplateKeys.has(getDailyTemplateKey(template)))
     .map((template) => ({
       id: `task-${dateKey}-${template.id}`,
       title: template.title,
@@ -382,13 +471,13 @@ export const ensureDailyTemplateTasks = (
 
   if (!tasksToAdd.length) {
     return hasCleanedTasks
-      ? reconcileGameDataPoints({ ...data, tasks: cleanedTasks, updatedAt: now }, now)
+      ? reconcileGameDataPoints({ ...data, tasks: dedupedTasks, updatedAt: now }, now)
       : data;
   }
 
   return reconcileGameDataPoints({
     ...data,
-    tasks: [...tasksToAdd, ...cleanedTasks],
+    tasks: [...tasksToAdd, ...dedupedTasks],
     updatedAt: now
   }, now);
 };

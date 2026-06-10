@@ -79,7 +79,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           <div className="pop-icon-box w-12 h-12 bg-pop-red">
             <Flame className="w-6 h-6 text-white" />
           </div>
-          <span className="font-black text-xl text-pop-black">设计人生</span>
+          <span className="font-black text-xl text-pop-black">辛苦了，老己</span>
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -102,8 +102,8 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                 <Flame className="w-7 h-7 text-white" />
               </div>
               <div>
-                <h1 className="font-black text-2xl text-pop-black">设计人生</h1>
-                <p className="text-sm font-bold text-pop-black/60">游戏化自律系统</p>
+                <h1 className="font-black text-2xl text-pop-black">辛苦了，老己</h1>
+                <p className="text-sm font-bold text-pop-black/60">爱自己，是终身美丽的开始</p>
               </div>
             </div>
 
