@@ -1,10 +1,10 @@
-import { type FormEvent, type MouseEvent, useState } from 'react';
+import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import { Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
-import { sortTasksForDisplay } from '../lib/gameSync';
+import { filterTasksByDate, getLocalDateKey, isRecurringDailyTask, sortTasksForDisplay } from '../lib/gameSync';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 
@@ -12,32 +12,41 @@ export function Tasks() {
   const tasks = useGameStore((state) => state.tasks);
   const toggleSyncedTask = useGameStore((state) => state.toggleTask);
   const addSyncedTask = useGameStore((state) => state.addTask);
+  const ensureDailyTasksForDate = useGameStore((state) => state.ensureDailyTasksForDate);
   const editSyncedTask = useGameStore((state) => state.editTask);
   const deleteSyncedTask = useGameStore((state) => state.deleteTask);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState<Exclude<CategoryFilter, 'all'>>('daily');
   const [newTaskPoints, setNewTaskPoints] = useState(10);
+  const [saveDailyTemplate, setSaveDailyTemplate] = useState(true);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingPoints, setEditingPoints] = useState(10);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [selectedDateKey, setSelectedDateKey] = useState(() => getLocalDateKey());
   const [showAnimation, setShowAnimation] = useState(false);
   const [lastPoints, setLastPoints] = useState(0);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
-  const sortedTasks = sortTasksForDisplay(tasks);
-  const filteredTasks = sortedTasks.filter(task => 
-    categoryFilter === 'all' || task.category === categoryFilter
-  );
-
-  const completedCount = tasks.filter(t => t.completed).length;
-  const totalCount = tasks.length;
-  const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  const todayLabel = new Date().toLocaleDateString('zh-CN', {
+  const selectedDate = new Date(`${selectedDateKey}T00:00:00`);
+  const selectedDateLabel = selectedDate.toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
   });
+  const tasksForSelectedDate = filterTasksByDate(sortTasksForDisplay(tasks), selectedDateKey);
+  const filteredTasks = tasksForSelectedDate.filter(task => 
+    categoryFilter === 'all' || task.category === categoryFilter
+  );
+
+  const completedCount = tasksForSelectedDate.filter(t => t.completed).length;
+  const totalCount = tasksForSelectedDate.length;
+  const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+
+  useEffect(() => {
+    void ensureDailyTasksForDate(selectedDateKey);
+  }, [ensureDailyTasksForDate, selectedDateKey]);
 
   const toggleTask = async (taskId: string) => {
     const { awardedPoints } = await toggleSyncedTask(taskId);
@@ -52,7 +61,9 @@ export function Tasks() {
     const created = await addSyncedTask({
       title: newTaskTitle,
       category: newTaskCategory,
-      points: newTaskPoints
+      points: newTaskPoints,
+      dateKey: selectedDateKey,
+      saveAsDailyTemplate: newTaskCategory === 'daily' && saveDailyTemplate
     });
 
     if (created) {
@@ -94,15 +105,31 @@ export function Tasks() {
     }
   };
 
-  const weekDates = getWeekDates();
+  const weekDates = getWeekDates(new Date(selectedDate));
 
-  // Mock week data
-  const weekData = weekDates.map((date, index) => ({
-    date,
-    completed: index === 6 ? completedCount : 0,
-    total: index === 6 ? totalCount : 0,
-    isToday: date.toDateString() === new Date().toDateString(),
-  }));
+  const weekData = weekDates.map((date) => {
+    const dateKey = getLocalDateKey(date);
+    const dayTasks = filterTasksByDate(tasks, dateKey);
+
+    return {
+      date,
+      completed: dayTasks.filter((task) => task.completed).length,
+      total: dayTasks.length,
+      isSelected: dateKey === selectedDateKey,
+    };
+  });
+
+  const openNativeDatePicker = () => {
+    const input = dateInputRef.current;
+    if (!input) return;
+
+    input.focus();
+    try {
+      input.showPicker();
+    } catch {
+      input.click();
+    }
+  };
 
   // Mock month data - heatmap
   const getHeatmapColor = (_day: number) => {
@@ -180,6 +207,18 @@ export function Tasks() {
             添加
           </button>
         </div>
+
+        {newTaskCategory === 'daily' && (
+          <label className="mt-3 flex w-fit cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-yellow px-4 py-2 font-black text-pop-black shadow-pop-sm">
+            <input
+              checked={saveDailyTemplate}
+              onChange={(event) => setSaveDailyTemplate(event.target.checked)}
+              className="h-5 w-5 accent-pop-green"
+              type="checkbox"
+            />
+            <span>每天自动出现</span>
+          </label>
+        )}
       </form>
 
       {/* Category Filter */}
@@ -213,7 +252,7 @@ export function Tasks() {
               <Target className="h-8 w-8 text-pop-black" />
             </div>
             <p className="text-xl font-black text-pop-black">暂无任务</p>
-            <p className="mt-2 text-sm font-bold text-pop-black/60">添加一个任务后，它会在这里出现。</p>
+            <p className="mt-2 text-sm font-bold text-pop-black/60">给 {selectedDateLabel} 添加一个任务后，它会在这里出现。</p>
           </div>
         )}
 
@@ -251,6 +290,11 @@ export function Tasks() {
                   )}>
                     {CATEGORY_LABELS[task.category]}
                   </span>
+                  {isRecurringDailyTask(task) && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
+                      每天
+                    </span>
+                  )}
                   {task.completed && (
                     <span className="pop-tag-yellow text-xs flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
@@ -358,7 +402,7 @@ export function Tasks() {
             key={index}
             className={cn(
               "pop-card p-3 text-center !p-3",
-              day.isToday && "bg-pop-yellow ring-4 ring-pop-red"
+              day.isSelected && "bg-pop-yellow ring-4 ring-pop-red"
             )}
           >
             <p className="text-xs font-bold text-pop-black/60 mb-1">
@@ -366,7 +410,7 @@ export function Tasks() {
             </p>
             <p className={cn(
               "text-xl font-black mb-2",
-              day.isToday ? "text-pop-red" : "text-pop-black"
+              day.isSelected ? "text-pop-red" : "text-pop-black"
             )}>
               {day.date.getDate()}
             </p>
@@ -542,11 +586,28 @@ export function Tasks() {
           </div>
         </div>
         
-        {/* View Mode Switcher - 波普艺术风格 */}
-        <div className="flex items-center gap-3">
-          <span className="pop-tag bg-white text-pop-black">
-            {todayLabel}
-          </span>
+        {/* Date picker and view mode switcher - 波普艺术风格 */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={openNativeDatePicker}
+              className="flex cursor-pointer items-center gap-2 rounded-pop border-4 border-pop-black bg-white px-4 py-2 font-black text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+              aria-label="打开系统日历选择任务日期"
+            >
+              <Calendar className="h-5 w-5 text-pop-red" />
+              <span>{selectedDateLabel}</span>
+            </button>
+            <input
+              ref={dateInputRef}
+              aria-label="选择任务日期"
+              className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+              tabIndex={-1}
+              type="date"
+              value={selectedDateKey}
+              onChange={(event) => setSelectedDateKey(event.target.value || getLocalDateKey())}
+            />
+          </div>
           <div className="pop-switch">
             {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
               <button

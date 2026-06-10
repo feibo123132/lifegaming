@@ -47,7 +47,6 @@ function App() {
   const user = useAuthStore((state) => state.user);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const syncFromCloud = useGameStore((state) => state.syncFromCloud);
-  const clearLocalGameData = useGameStore((state) => state.clearLocalData);
 
   useEffect(() => {
     initAuth();
@@ -61,8 +60,7 @@ function App() {
       return;
     }
 
-    clearLocalGameData();
-  }, [clearLocalGameData, isAuthLoading, syncFromCloud, user]);
+  }, [isAuthLoading, syncFromCloud, user]);
 
   return (
     <Routes>

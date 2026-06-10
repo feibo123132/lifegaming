@@ -26,7 +26,50 @@ export const exerciseRecords: ExerciseRecord[] = [];
 export const videoProjects: VideoProject[] = [];
 
 // 积分商城
-export const rewards: Reward[] = [];
+export const rewards: Reward[] = [
+  {
+    id: 'milk-tea',
+    name: '一杯奶茶',
+    points: 80,
+    icon: '🧋',
+    redeemed: false,
+  },
+  {
+    id: 'movie-night',
+    name: '电影之夜',
+    points: 150,
+    icon: '🎬',
+    redeemed: false,
+  },
+  {
+    id: 'game-hour',
+    name: '游戏一小时',
+    points: 120,
+    icon: '🎮',
+    redeemed: false,
+  },
+  {
+    id: 'favorite-meal',
+    name: '奖励餐',
+    points: 220,
+    icon: '🍱',
+    redeemed: false,
+  },
+  {
+    id: 'lazy-afternoon',
+    name: '放空半日',
+    points: 300,
+    icon: '🛋️',
+    redeemed: false,
+  },
+  {
+    id: 'new-gear',
+    name: '小装备基金',
+    points: 500,
+    icon: '🎧',
+    redeemed: false,
+  },
+];
 
 // NPC 对话
 export const npcDialogues = {

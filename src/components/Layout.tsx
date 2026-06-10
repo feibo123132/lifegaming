@@ -13,12 +13,14 @@ import {
   Crown,
   Star,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Pencil,
+  Check
 } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { currentUser } from '../data/mockData';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGameStore } from '../store/useGameStore';
+import { getPlayerProgress } from '../lib/gameSync';
 import type { TabType } from '../types';
 
 interface LayoutProps {
@@ -38,18 +40,35 @@ const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
 
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const { user, logout } = useAuthStore();
+  const tasks = useGameStore((state) => state.tasks);
+  const profileName = useGameStore((state) => state.profileName);
+  const setProfileName = useGameStore((state) => state.setProfileName);
   const userPoints = useGameStore((state) => state.userPoints);
   const isSyncing = useGameStore((state) => state.isSyncing);
   
-  const progressPercent = (currentUser.exp / currentUser.maxExp) * 100;
-  const displayName = user?.email?.split('@')[0] || currentUser.name;
+  const progress = getPlayerProgress(tasks);
+  const progressPercent = (progress.exp / progress.maxExp) * 100;
+  const fallbackName = user?.email?.split('@')[0] || '新玩家';
+  const displayName = profileName || fallbackName;
   const displayEmail = user?.email || '已完成个人身份认证';
 
   const handleLogout = async () => {
     if (window.confirm('确定要退出登录吗？')) {
       await logout();
     }
+  };
+
+  const startEditingName = () => {
+    setNameDraft(displayName);
+    setIsEditingName(true);
+  };
+
+  const saveProfileName = async () => {
+    await setProfileName(nameDraft);
+    setIsEditingName(false);
   };
 
   return (
@@ -103,9 +122,48 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                   </div>
                 </div>
                 <div className="min-w-0">
-                  <p className="font-black text-lg text-pop-black truncate">{displayName}</p>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={nameDraft}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            void saveProfileName();
+                          }
+                          if (event.key === 'Escape') {
+                            setIsEditingName(false);
+                          }
+                        }}
+                        className="min-w-0 flex-1 rounded-pop border-3 border-pop-black bg-white px-2 py-1 text-sm font-black text-pop-black"
+                        maxLength={16}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void saveProfileName()}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-pop border-3 border-pop-black bg-pop-green text-white shadow-pop-sm"
+                        aria-label="保存昵称"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 truncate font-black text-lg text-pop-black">{displayName}</p>
+                      <button
+                        type="button"
+                        onClick={startEditingName}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-pop border-3 border-pop-black bg-white text-pop-blue shadow-pop-sm transition-all hover:bg-pop-blue hover:text-white"
+                        aria-label="编辑昵称"
+                        title="编辑昵称"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                   <div className="pop-tag-yellow text-xs !px-2 !py-0.5">
-                    Lv.{currentUser.level}
+                    Lv.{progress.level} {progress.levelTitle}
                   </div>
                 </div>
               </div>
@@ -133,7 +191,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm font-bold text-pop-black">
                   <span>经验值</span>
-                  <span>{currentUser.exp}/{currentUser.maxExp}</span>
+                  <span>{progress.exp}/{progress.maxExp}</span>
                 </div>
                 <div className="pop-progress h-4">
                   <div 
@@ -155,7 +213,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               {/* 连击天数 */}
               <div className="mt-3 flex items-center justify-center gap-2 bg-pop-red text-white font-bold py-2 rounded-pop border-3 border-pop-black">
                 <Flame className="w-5 h-5" />
-                <span>连续打卡 {currentUser.streak} 天</span>
+                <span>连续打卡 {progress.streak} 天</span>
               </div>
             </div>
 

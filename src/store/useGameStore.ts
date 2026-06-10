@@ -3,14 +3,17 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { db } from '../lib/cloudbase';
 import {
   buildCloudGameState,
+  createDailyTemplate,
   createUserTask,
   createInitialGameData,
+  ensureDailyTemplateTasks,
   getCloudSyncErrorMessage,
   mergeGameData,
   normalizeUserEmail,
   pickLatestCloudGameDoc,
   reconcileGameDataPoints,
   resetExampleGameData,
+  shouldUseLocalGameDataForSync,
   getTaskAwardedPoints,
   toggleUserTaskCompletion,
   updateUserTask,
@@ -28,10 +31,12 @@ interface GameStoreState extends GameData {
   isSyncing: boolean;
   syncError: string | null;
   setSyncIdentity: (email: string | null) => void;
+  setProfileName: (name: string) => Promise<void>;
   syncFromCloud: (email: string) => Promise<void>;
   syncToCloud: () => Promise<void>;
   clearLocalData: () => void;
   addTask: (input: NewTaskInput) => Promise<boolean>;
+  ensureDailyTasksForDate: (dateKey: string) => Promise<void>;
   editTask: (taskId: string, input: EditTaskInput) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<boolean>;
   toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
@@ -72,15 +77,20 @@ export const useGameStore = create<GameStoreState>()(
 
       syncFromCloud: async (email) => {
         const userId = normalizeUserEmail(email);
-        const localSnapshot = {
-          tasks: get().tasks,
-          userPoints: get().userPoints,
-          redeemedRewardIds: get().redeemedRewardIds,
-          redeemHistory: get().redeemHistory,
-          npcMessages: get().npcMessages,
-          npcState: get().npcState,
-          updatedAt: get().updatedAt
-        };
+        const shouldReuseLocalData = shouldUseLocalGameDataForSync(get().currentUserEmail, userId);
+        const localSnapshot = shouldReuseLocalData
+          ? {
+              tasks: get().tasks,
+              dailyTemplates: get().dailyTemplates,
+              profileName: get().profileName,
+              userPoints: get().userPoints,
+              redeemedRewardIds: get().redeemedRewardIds,
+              redeemHistory: get().redeemHistory,
+              npcMessages: get().npcMessages,
+              npcState: get().npcState,
+              updatedAt: get().updatedAt
+            }
+          : createInitialGameData();
 
         set({ currentUserEmail: userId, isSyncing: true, syncError: null });
 
@@ -129,6 +139,8 @@ export const useGameStore = create<GameStoreState>()(
         const userId = normalizeUserEmail(email);
         const data = {
           tasks: get().tasks,
+          dailyTemplates: get().dailyTemplates,
+          profileName: get().profileName,
           userPoints: get().userPoints,
           redeemedRewardIds: get().redeemedRewardIds,
           redeemHistory: get().redeemHistory,
@@ -165,12 +177,42 @@ export const useGameStore = create<GameStoreState>()(
       addTask: async (input) => {
         const task = createUserTask(input, `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
         if (!task) return false;
+        const template = input.category === 'daily' && input.saveAsDailyTemplate
+          ? createDailyTemplate(input, `daily-template-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+          : null;
 
         set((state) => withUpdatedAt({
-          tasks: [task, ...state.tasks]
+          tasks: [task, ...state.tasks],
+          dailyTemplates: template ? [template, ...state.dailyTemplates] : state.dailyTemplates
         }));
         await get().syncToCloud();
         return true;
+      },
+
+      ensureDailyTasksForDate: async (dateKey) => {
+        const currentData = {
+          profileName: get().profileName,
+          tasks: get().tasks,
+          dailyTemplates: get().dailyTemplates,
+          userPoints: get().userPoints,
+          redeemedRewardIds: get().redeemedRewardIds,
+          redeemHistory: get().redeemHistory,
+          npcMessages: get().npcMessages,
+          npcState: get().npcState,
+          updatedAt: get().updatedAt
+        };
+        const nextData = ensureDailyTemplateTasks(currentData, dateKey);
+        if (nextData === currentData) return;
+
+        set({ ...nextData });
+        await get().syncToCloud();
+      },
+
+      setProfileName: async (name) => {
+        set(withUpdatedAt({
+          profileName: name.trim().slice(0, 16)
+        }));
+        await get().syncToCloud();
       },
 
       editTask: async (taskId, input) => {
@@ -257,6 +299,8 @@ export const useGameStore = create<GameStoreState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         tasks: state.tasks,
+        dailyTemplates: state.dailyTemplates,
+        profileName: state.profileName,
         userPoints: state.userPoints,
         redeemedRewardIds: state.redeemedRewardIds,
         redeemHistory: state.redeemHistory,
@@ -269,6 +313,8 @@ export const useGameStore = create<GameStoreState>()(
         const persisted = persistedState as Partial<GameStoreState>;
         const gameData = reconcileGameDataPoints({
           tasks: persisted.tasks ?? currentState.tasks,
+          dailyTemplates: persisted.dailyTemplates ?? currentState.dailyTemplates,
+          profileName: typeof persisted.profileName === 'string' ? persisted.profileName : currentState.profileName,
           userPoints: persisted.userPoints ?? currentState.userPoints,
           redeemedRewardIds: persisted.redeemedRewardIds ?? currentState.redeemedRewardIds,
           redeemHistory: persisted.redeemHistory ?? currentState.redeemHistory,

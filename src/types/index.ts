@@ -7,6 +7,15 @@ export interface Task {
   createdAt?: string;
   completedPoints?: number;
   completedAt?: Date;
+  templateId?: string;
+}
+
+export interface DailyTaskTemplate {
+  id: string;
+  title: string;
+  points: number;
+  active: boolean;
+  createdAt: string;
 }
 
 export interface SleepRecord {

@@ -13,24 +13,32 @@ import {
   Crown
 } from 'lucide-react';
 import { ProgressRing } from '../components/ProgressRing';
-import { currentUser, sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../data/mockData';
+import { sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../data/mockData';
 import { cn, formatDate } from '../utils/helpers';
 import { useGameStore } from '../store/useGameStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { filterTasksByDate, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
 
 export function Dashboard() {
   const tasks = useGameStore((state) => state.tasks);
+  const profileName = useGameStore((state) => state.profileName);
   const userPoints = useGameStore((state) => state.userPoints);
   const isSyncing = useGameStore((state) => state.isSyncing);
   const syncError = useGameStore((state) => state.syncError);
-  const completedTasks = tasks.filter(t => t.completed).length;
-  const totalTasks = tasks.length;
+  const user = useAuthStore((state) => state.user);
+  const todayKey = getLocalDateKey();
+  const todayTasks = filterTasksByDate(tasks, todayKey);
+  const completedTasks = todayTasks.filter(t => t.completed).length;
+  const totalTasks = todayTasks.length;
   const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  const playerProgress = getPlayerProgress(tasks, todayKey);
+  const displayName = profileName || user?.email?.split('@')[0] || '新玩家';
   
   const todaySleep = sleepRecords[sleepRecords.length - 1];
   const stats = [
     { label: '今日任务', value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
     { label: '可用积分', value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
-    { label: '连续打卡', value: `${currentUser.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
+    { label: '连续打卡', value: `${playerProgress.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
     { label: '本周排名', value: '暂无', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
   ];
 
@@ -40,7 +48,7 @@ export function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="pop-title">欢迎回来，{currentUser.name}！</h2>
+            <h2 className="pop-title">欢迎回来，{displayName}！</h2>
             <span className="text-3xl animate-bounce">👋</span>
           </div>
           <p className="text-pop-black/70 font-bold mt-1">{formatDate(new Date())}</p>
@@ -50,7 +58,7 @@ export function Dashboard() {
         </div>
         <div className="pop-tag-yellow text-lg">
           <Flame className="w-5 h-5 mr-1 inline" />
-          连续 {currentUser.streak} 天
+          连续 {playerProgress.streak} 天
         </div>
       </div>
 
@@ -72,10 +80,10 @@ export function Dashboard() {
                 当前等级
               </div>
             </div>
-            <p className="text-4xl font-black text-pop-black">Lv.{currentUser.level} 进阶玩家</p>
+            <p className="text-4xl font-black text-pop-black">Lv.{playerProgress.level} {playerProgress.levelTitle}</p>
             <div className="bg-white border-4 border-pop-black rounded-pop p-4 inline-block">
               <p className="text-pop-black font-bold">距离下一级还需</p>
-              <p className="text-2xl font-black text-pop-red">{currentUser.maxExp - currentUser.exp} 经验值</p>
+              <p className="text-2xl font-black text-pop-red">{playerProgress.expToNextLevel} 经验值</p>
             </div>
           </div>
           
