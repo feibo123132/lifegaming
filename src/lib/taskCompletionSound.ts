@@ -22,13 +22,41 @@ type AudioElement = HTMLAudioElement & {
 let fixedTaskCompletionSound: AudioElement | null = null;
 let randomTaskCompletionSound: AudioElement | null = null;
 
-const getBaseUrl = () => {
-  const meta = import.meta as ImportMeta & { env?: { BASE_URL?: string } };
-  const baseUrl = meta.env?.BASE_URL || '/';
-  return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+type SoundUrlOptions = {
+  baseUrl?: string;
+  pathname?: string;
 };
 
-const resolveSoundUrl = (path: string) => `${getBaseUrl()}${path}`;
+const normalizeBaseUrl = (baseUrl: string) => {
+  if (!baseUrl || baseUrl === '.') {
+    return '/';
+  }
+
+  const withLeadingSlash = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+};
+
+const getRuntimeBaseUrl = (pathname?: string) => {
+  const currentPathname = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '');
+  const firstSegment = currentPathname.match(/^\/([^/]+)(?:\/|$)/)?.[1];
+
+  return firstSegment ? `/${firstSegment}/` : null;
+};
+
+const getViteBaseUrl = () => {
+  const meta = import.meta as ImportMeta & { env?: { BASE_URL?: string } };
+  return meta.env?.BASE_URL || '/';
+};
+
+export const resolveTaskCompletionSoundUrl = (
+  path: string,
+  options: SoundUrlOptions = {}
+) => {
+  const baseUrl = getRuntimeBaseUrl(options.pathname) ?? normalizeBaseUrl(options.baseUrl ?? getViteBaseUrl());
+  const normalizedPath = path.replace(/^\/+/, '');
+
+  return `${baseUrl}${normalizedPath}`;
+};
 
 const playAudio = (audio: AudioElement) => {
   audio.currentTime = 0;
@@ -41,13 +69,18 @@ const playAudio = (audio: AudioElement) => {
 
 export const shouldPlayTaskCompletionSound = (awardedPoints: number) => awardedPoints > 0;
 
+export const shouldPlayTaskCompletionSoundBeforeToggle = (
+  isCurrentlyCompleted: boolean,
+  taskPoints: number
+) => !isCurrentlyCompleted && taskPoints > 0;
+
 export const playTaskCompletionSound = () => {
   if (typeof Audio === 'undefined') {
     return;
   }
 
   if (!fixedTaskCompletionSound) {
-    fixedTaskCompletionSound = new Audio(resolveSoundUrl(TASK_COMPLETION_FIXED_SOUND_PATH)) as AudioElement;
+    fixedTaskCompletionSound = new Audio(resolveTaskCompletionSoundUrl(TASK_COMPLETION_FIXED_SOUND_PATH)) as AudioElement;
     fixedTaskCompletionSound.preload = 'auto';
   }
 
@@ -60,6 +93,6 @@ export const playTaskCompletionSound = () => {
   }
 
   const randomIndex = Math.floor(Math.random() * TASK_COMPLETION_RANDOM_SOUND_PATHS.length);
-  randomTaskCompletionSound.src = resolveSoundUrl(TASK_COMPLETION_RANDOM_SOUND_PATHS[randomIndex]);
+  randomTaskCompletionSound.src = resolveTaskCompletionSoundUrl(TASK_COMPLETION_RANDOM_SOUND_PATHS[randomIndex]);
   playAudio(randomTaskCompletionSound);
 };

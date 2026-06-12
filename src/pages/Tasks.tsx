@@ -4,8 +4,21 @@ import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
-import { filterTasksByDate, getDefaultTaskPoints, getLocalDateKey, isRecurringDailyTask, sortTasksForDisplay } from '../lib/gameSync';
-import { playTaskCompletionSound, shouldPlayTaskCompletionSound } from '../lib/taskCompletionSound';
+import {
+  calculateTaskCompletionStats,
+  filterTasksByDate,
+  getDefaultTaskPoints,
+  getLocalDateKey,
+  getTaskPenaltyPoints,
+  isOverdueIncompleteTask,
+  isRecurringDailyTask,
+  sortTasksForDisplay
+} from '../lib/gameSync';
+import {
+  playTaskCompletionSound,
+  shouldPlayTaskCompletionSound,
+  shouldPlayTaskCompletionSoundBeforeToggle
+} from '../lib/taskCompletionSound';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 type TaskCategory = Exclude<CategoryFilter, 'all'>;
@@ -42,18 +55,21 @@ export function Tasks() {
     categoryFilter === 'all' || task.category === categoryFilter
   );
 
-  const completedCount = tasksForSelectedDate.filter(t => t.completed).length;
-  const totalCount = tasksForSelectedDate.length;
-  const completionRate = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const currentViewStats = calculateTaskCompletionStats(tasks, viewMode, selectedDateKey);
+  const completedCount = currentViewStats.completed;
+  const totalCount = currentViewStats.total;
+  const completionRate = currentViewStats.completionRate;
 
   useEffect(() => {
     void ensureDailyTasksForDate(selectedDateKey);
   }, [ensureDailyTasksForDate, selectedDateKey]);
 
-  const toggleTask = async (taskId: string) => {
+  const toggleTask = async (taskId: string, soundAlreadyPlayed = false) => {
     const { awardedPoints } = await toggleSyncedTask(taskId);
     if (shouldPlayTaskCompletionSound(awardedPoints)) {
-      playTaskCompletionSound();
+      if (!soundAlreadyPlayed) {
+        playTaskCompletionSound();
+      }
       setLastPoints(awardedPoints);
       setShowAnimation(true);
     }
@@ -264,18 +280,32 @@ export function Tasks() {
           </div>
         )}
 
-        {filteredTasks.map((task) => (
+        {filteredTasks.map((task) => {
+          const isOverdue = isOverdueIncompleteTask(task);
+          const penaltyPoints = getTaskPenaltyPoints(task);
+
+          return (
           <div
             key={task.id}
             onClick={() => {
               if (editingTaskId !== task.id) {
-                void toggleTask(task.id);
+                const shouldPlaySoundImmediately = shouldPlayTaskCompletionSoundBeforeToggle(
+                  task.completed,
+                  task.points
+                );
+
+                if (shouldPlaySoundImmediately) {
+                  playTaskCompletionSound();
+                }
+
+                void toggleTask(task.id, shouldPlaySoundImmediately);
               }
             }}
             className={cn(
               "pop-list-item",
               editingTaskId === task.id ? "cursor-default" : "cursor-pointer",
-              task.completed && "bg-pop-green/20 border-pop-green"
+              task.completed && "bg-pop-green/20 border-pop-green",
+              isOverdue && "bg-pop-red/15 border-pop-red"
             )}
           >
             <div className="flex items-center gap-4">
@@ -283,7 +313,9 @@ export function Tasks() {
                 "w-8 h-8 rounded-pop border-4 flex items-center justify-center transition-all",
                 task.completed
                   ? "bg-pop-green border-pop-green"
-                  : "bg-white border-pop-black hover:bg-pop-yellow"
+                  : isOverdue
+                    ? "bg-pop-red/10 border-pop-red hover:bg-pop-red/20"
+                    : "bg-white border-pop-black hover:bg-pop-yellow"
               )}>
                 {task.completed && <Check className="w-5 h-5 text-white" />}
               </div>
@@ -309,6 +341,12 @@ export function Tasks() {
                       +{task.points}积分
                     </span>
                   )}
+                  {isOverdue && (
+                    <span className="pop-tag-red text-xs flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      -{penaltyPoints}积分
+                    </span>
+                  )}
                 </div>
                 {editingTaskId === task.id ? (
                   <input
@@ -321,7 +359,7 @@ export function Tasks() {
                 ) : (
                   <p className={cn(
                     "font-bold text-lg transition-colors",
-                    task.completed ? "text-pop-black/40 line-through" : "text-pop-black"
+                    task.completed ? "text-pop-black/40 line-through" : isOverdue ? "text-pop-red" : "text-pop-black"
                   )}>
                     {task.title}
                   </p>
@@ -342,10 +380,10 @@ export function Tasks() {
                 ) : (
                   <div className={cn(
                     "pop-tag text-base",
-                    task.completed ? "bg-pop-green text-white" : "bg-pop-yellow"
+                    task.completed ? "bg-pop-green text-white" : isOverdue ? "bg-pop-red text-white" : "bg-pop-yellow"
                   )}>
                     <Star className="w-4 h-4 mr-1 inline" />
-                    {task.points}分
+                    {task.points}积分
                   </div>
                 )}
               </div>
@@ -396,7 +434,8 @@ export function Tasks() {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   buildCloudGameState,
+  calculateAvailablePoints,
+  calculateTaskCompletionStats,
   createTaskTimestampForDate,
   createUserTask,
   createInitialGameData,
@@ -14,6 +16,8 @@ import {
   getLevelTitle,
   getLocalDateKey,
   getPlayerProgress,
+  getTaskPenaltyPoints,
+  isOverdueIncompleteTask,
   isRecurringDailyTask,
   isExampleGameData,
   mergeGameData,
@@ -135,6 +139,127 @@ test('filters tasks by their local task day', () => {
   assert.deepEqual(filterTasksByDate([june9, june10], '2026-06-10').map((task) => task.title), [
     '6月10日任务'
   ]);
+});
+
+test('marks only past-day incomplete tasks as overdue', () => {
+  const overdue = createUserTask(
+    { title: '昨天未完成', category: 'daily', points: 10, dateKey: '2026-06-11' },
+    'task-overdue',
+    '2026-06-11T08:00:00.000'
+  )!;
+  const todayOpen = createUserTask(
+    { title: '今天未完成', category: 'daily', points: 10, dateKey: '2026-06-12' },
+    'task-today',
+    '2026-06-12T08:00:00.000'
+  )!;
+  const completedPast = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '昨天已完成', category: 'daily', points: 10, dateKey: '2026-06-11' },
+      'task-completed',
+      '2026-06-11T08:00:00.000'
+    )!,
+    '2026-06-11T10:00:00.000'
+  ).task;
+
+  assert.equal(isOverdueIncompleteTask(overdue, '2026-06-12'), true);
+  assert.equal(isOverdueIncompleteTask(todayOpen, '2026-06-12'), false);
+  assert.equal(isOverdueIncompleteTask(completedPast, '2026-06-12'), false);
+});
+
+test('deducts triple task points from available points for overdue incomplete tasks', () => {
+  const completed = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '赚取积分', category: 'main', points: 100, dateKey: '2026-06-11' },
+      'task-completed',
+      '2026-06-11T08:00:00.000'
+    )!,
+    '2026-06-11T10:00:00.000'
+  ).task;
+  const overdue = createUserTask(
+    { title: '扣分任务', category: 'daily', points: 10, dateKey: '2026-06-11' },
+    'task-overdue',
+    '2026-06-11T08:00:00.000'
+  )!;
+  const todayOpen = createUserTask(
+    { title: '今天还没结束', category: 'daily', points: 10, dateKey: '2026-06-12' },
+    'task-today',
+    '2026-06-12T08:00:00.000'
+  )!;
+
+  assert.equal(getTaskPenaltyPoints(overdue, '2026-06-12'), 30);
+  assert.equal(getTaskPenaltyPoints(todayOpen, '2026-06-12'), 0);
+  assert.equal(calculateAvailablePoints({
+    tasks: [completed, overdue, todayOpen],
+    redeemHistory: []
+  }, '2026-06-12'), 70);
+});
+
+test('deducts overdue incomplete task penalties from player experience', () => {
+  const completed = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '获得经验', category: 'main', points: 60, dateKey: '2026-06-11' },
+      'task-completed',
+      '2026-06-11T08:00:00.000'
+    )!,
+    '2026-06-11T10:00:00.000'
+  ).task;
+  const overdue = createUserTask(
+    { title: '损失经验', category: 'daily', points: 10, dateKey: '2026-06-11' },
+    'task-overdue',
+    '2026-06-11T08:00:00.000'
+  )!;
+
+  assert.equal(getPlayerProgress([completed, overdue], '2026-06-12').totalExp, 30);
+});
+
+test('calculates task completion stats for day week and month views', () => {
+  const mondayDone = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '周一完成', category: 'daily', points: 10, dateKey: '2026-06-08' },
+      'task-monday',
+      '2026-06-08T08:00:00.000'
+    )!,
+    '2026-06-08T09:00:00.000'
+  ).task;
+  const selectedDayDone = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '当天完成', category: 'main', points: 20, dateKey: '2026-06-11' },
+      'task-selected',
+      '2026-06-11T08:00:00.000'
+    )!,
+    '2026-06-11T09:00:00.000'
+  ).task;
+  const fridayOpen = createUserTask(
+    { title: '周五未完成', category: 'side', points: 15, dateKey: '2026-06-12' },
+    'task-friday',
+    '2026-06-12T08:00:00.000'
+  )!;
+  const nextWeekDone = toggleUserTaskCompletion(
+    createUserTask(
+      { title: '下周完成', category: 'daily', points: 10, dateKey: '2026-06-15' },
+      'task-next-week',
+      '2026-06-15T08:00:00.000'
+    )!,
+    '2026-06-15T09:00:00.000'
+  ).task;
+
+  const tasks = [mondayDone, selectedDayDone, fridayOpen, nextWeekDone];
+
+  assert.deepEqual(calculateTaskCompletionStats(tasks, 'day', '2026-06-11'), {
+    completed: 1,
+    total: 1,
+    completionRate: 100
+  });
+  assert.deepEqual(calculateTaskCompletionStats(tasks, 'week', '2026-06-11'), {
+    completed: 2,
+    total: 3,
+    completionRate: 66.66666666666666
+  });
+  assert.deepEqual(calculateTaskCompletionStats(tasks, 'month', '2026-06-11'), {
+    completed: 3,
+    total: 4,
+    completionRate: 75
+  });
 });
 
 test('generates daily template tasks for a selected date without duplicates', () => {

@@ -1,5 +1,5 @@
 import { currentUser, initialTasks, rewards } from '../data/mockData.ts';
-import type { DailyTaskTemplate, Task } from '../types/index.ts';
+import type { DailyTaskTemplate, Task, ViewMode } from '../types/index.ts';
 
 export interface SyncedNpcMessage {
   id: string;
@@ -59,6 +59,12 @@ export interface PlayerProgress {
   expToNextLevel: number;
   levelTitle: string;
   streak: number;
+}
+
+export interface TaskCompletionStats {
+  completed: number;
+  total: number;
+  completionRate: number;
 }
 
 const normalizeTask = (task: Task): Task => ({
@@ -164,6 +170,28 @@ export const shiftDateKey = (dateKey: string, dayDelta: number): string => {
   return getLocalDateKey(date);
 };
 
+const getWeekDateKeys = (dateKey: string): string[] => {
+  const date = new Date(`${DATE_KEY_PATTERN.test(dateKey) ? dateKey : getLocalDateKey()}T00:00:00`);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const dayInWeek = new Date(date);
+    dayInWeek.setDate(date.getDate() + index);
+    return getLocalDateKey(dayInWeek);
+  });
+};
+
+const getMonthDateKeys = (dateKey: string): string[] => {
+  const date = new Date(`${DATE_KEY_PATTERN.test(dateKey) ? dateKey : getLocalDateKey()}T00:00:00`);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  return Array.from({ length: daysInMonth }, (_, index) => getLocalDateKey(new Date(year, month, index + 1)));
+};
+
 export const createUserTask = (
   input: NewTaskInput,
   id: string,
@@ -218,6 +246,27 @@ export const updateUserTask = (task: Task, input: EditTaskInput): Task | null =>
 export const getTaskAwardedPoints = (task: Task): number =>
   task.completed ? task.completedPoints ?? task.points : 0;
 
+const getTaskDateKey = (task: Task): string =>
+  getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+
+export const isOverdueIncompleteTask = (
+  task: Task,
+  today: Date | string = new Date()
+): boolean => !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
+
+export const getTaskPenaltyPoints = (
+  task: Task,
+  today: Date | string = new Date()
+): number => {
+  if (!isOverdueIncompleteTask(task, today)) return 0;
+  return Math.max(0, Math.round(task.points || 0)) * 3;
+};
+
+const getOverdueTaskPenaltyPoints = (
+  tasks: Task[],
+  today: Date | string = new Date()
+): number => tasks.reduce((total, task) => total + getTaskPenaltyPoints(task, today), 0);
+
 export const toggleUserTaskCompletion = (
   task: Task,
   now = new Date().toISOString()
@@ -247,11 +296,15 @@ export const toggleUserTaskCompletion = (
   };
 };
 
-export const calculateAvailablePoints = (data: Pick<GameData, 'tasks' | 'redeemHistory'>): number => {
+export const calculateAvailablePoints = (
+  data: Pick<GameData, 'tasks' | 'redeemHistory'>,
+  today: Date | string = new Date()
+): number => {
   const awardedPoints = data.tasks.reduce((total, task) => total + getTaskAwardedPoints(task), 0);
   const spentPoints = data.redeemHistory.reduce((total, item) => total + Math.max(0, item.points || 0), 0);
+  const penaltyPoints = getOverdueTaskPenaltyPoints(data.tasks, today);
 
-  return Math.max(0, awardedPoints - spentPoints);
+  return Math.max(0, awardedPoints - spentPoints - penaltyPoints);
 };
 
 const getTaskCompletionDateKey = (task: Task): string | null => {
@@ -263,7 +316,8 @@ export const getPlayerProgress = (
   tasks: Task[],
   today: Date | string = new Date()
 ): PlayerProgress => {
-  const totalExp = tasks.reduce((total, task) => total + getTaskAwardedPoints(task), 0);
+  const awardedExp = tasks.reduce((total, task) => total + getTaskAwardedPoints(task), 0);
+  const totalExp = Math.max(0, awardedExp - getOverdueTaskPenaltyPoints(tasks, today));
   let level = 1;
   let exp = totalExp;
   let maxExp = getLevelExpRequirement(level);
@@ -320,7 +374,7 @@ export const reconcileGameDataPoints = (
   data: GameData,
   now = new Date().toISOString()
 ): GameData => {
-  const userPoints = calculateAvailablePoints(data);
+  const userPoints = calculateAvailablePoints(data, now);
   if (data.userPoints === userPoints) return data;
 
   return {
@@ -346,7 +400,31 @@ export const sortTasksForDisplay = (tasks: Task[]): Task[] =>
   });
 
 export const filterTasksByDate = (tasks: Task[], dateKey: string): Task[] =>
-  tasks.filter((task) => getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task))) === dateKey);
+  tasks.filter((task) => getTaskDateKey(task) === dateKey);
+
+export const calculateTaskCompletionStats = (
+  tasks: Task[],
+  viewMode: ViewMode,
+  selectedDateKey: string
+): TaskCompletionStats => {
+  const dateKeys = viewMode === 'day'
+    ? [selectedDateKey]
+    : viewMode === 'week'
+      ? getWeekDateKeys(selectedDateKey)
+      : getMonthDateKeys(selectedDateKey);
+  const dateKeySet = new Set(dateKeys);
+  const scopedTasks = tasks.filter((task) => (
+    dateKeySet.has(getTaskDateKey(task))
+  ));
+  const completed = scopedTasks.filter((task) => task.completed).length;
+  const total = scopedTasks.length;
+
+  return {
+    completed,
+    total,
+    completionRate: total > 0 ? (completed / total) * 100 : 0
+  };
+};
 
 export const isRecurringDailyTask = (task: Task): boolean =>
   task.category === 'daily' && Boolean(task.templateId);
@@ -367,7 +445,7 @@ const dedupeRecurringTasks = (tasks: Task[]): Task[] => {
   for (const task of tasks) {
     if (!isRecurringDailyTask(task)) continue;
 
-    const taskDateKey = getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+    const taskDateKey = getTaskDateKey(task);
     const key = `${taskDateKey}::${getDailyTemplateKey(task)}`;
     const current = preferredByKey.get(key);
     preferredByKey.set(key, current ? pickRecurringTaskToKeep(current, task) : task);
@@ -384,7 +462,7 @@ const dedupeRecurringTasks = (tasks: Task[]): Task[] => {
       continue;
     }
 
-    const taskDateKey = getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+    const taskDateKey = getTaskDateKey(task);
     const key = `${taskDateKey}::${getDailyTemplateKey(task)}`;
     const preferredTask = preferredByKey.get(key);
     if (emittedKeys.has(key) || preferredTask?.id !== task.id) continue;
@@ -439,7 +517,7 @@ export const ensureDailyTemplateTasks = (
     if (!task.templateId) return true;
     const template = templateById.get(task.templateId);
     if (!template) return true;
-    return getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task))) >= getLocalDateKey(template.createdAt);
+    return getTaskDateKey(task) >= getLocalDateKey(template.createdAt);
   });
   const dedupedTasks = dedupeRecurringTasks(cleanedTasks);
   const activeTemplates = dedupeDailyTemplates(data.dailyTemplates).filter(

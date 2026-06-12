@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { db } from '../lib/cloudbase';
 import {
   buildCloudGameState,
+  calculateAvailablePoints,
   createDailyTemplate,
   createUserTask,
   createInitialGameData,
@@ -14,7 +15,6 @@ import {
   reconcileGameDataPoints,
   resetExampleGameData,
   shouldUseLocalGameDataForSync,
-  getTaskAwardedPoints,
   toggleUserTaskCompletion,
   updateUserTask,
   type CloudGameStateDocument,
@@ -184,10 +184,18 @@ export const useGameStore = create<GameStoreState>()(
         );
         if (!task) return false;
 
-        set((state) => withUpdatedAt({
-          tasks: [task, ...state.tasks],
-          dailyTemplates: template ? [template, ...state.dailyTemplates] : state.dailyTemplates
-        }));
+        set((state) => {
+          const nextTasks = [task, ...state.tasks];
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            dailyTemplates: template ? [template, ...state.dailyTemplates] : state.dailyTemplates,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
         await get().syncToCloud();
         return true;
       },
@@ -222,12 +230,20 @@ export const useGameStore = create<GameStoreState>()(
         const task = get().tasks.find((item) => item.id === taskId);
         if (!task || !updateUserTask(task, input)) return false;
 
-        set((state) => withUpdatedAt({
-          tasks: state.tasks.map((item) => {
+        set((state) => {
+          const nextTasks = state.tasks.map((item) => {
             if (item.id !== taskId) return item;
             return updateUserTask(item, input) || item;
-          })
-        }));
+          });
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
         await get().syncToCloud();
         return true;
       },
@@ -236,36 +252,52 @@ export const useGameStore = create<GameStoreState>()(
         const task = get().tasks.find((item) => item.id === taskId);
         if (!task) return false;
 
-        set((state) => withUpdatedAt({
-          tasks: state.tasks.filter((item) => item.id !== taskId),
-          userPoints: Math.max(0, state.userPoints - getTaskAwardedPoints(task))
-        }));
+        set((state) => {
+          const nextTasks = state.tasks.filter((item) => item.id !== taskId);
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
         await get().syncToCloud();
         return true;
       },
 
       toggleTask: async (taskId) => {
         let awardedPoints = 0;
-        set((state) => withUpdatedAt({
-          tasks: state.tasks.map((task) => {
+        set((state) => {
+          const nextTasks = state.tasks.map((task) => {
             if (task.id !== taskId) return task;
             const result = toggleUserTaskCompletion(task);
             awardedPoints = result.pointsDelta;
             return result.task;
-          }),
-          userPoints: Math.max(0, state.userPoints + awardedPoints)
-        }));
+          });
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
         await get().syncToCloud();
         return { awardedPoints };
       },
 
       redeemReward: async (rewardId, rewardName, points) => {
-        if (get().redeemedRewardIds.includes(rewardId) || get().userPoints < points) return false;
+        const availablePoints = calculateAvailablePoints({
+          tasks: get().tasks,
+          redeemHistory: get().redeemHistory
+        });
+        if (get().redeemedRewardIds.includes(rewardId) || availablePoints < points) return false;
 
-        set((state) => withUpdatedAt({
-          userPoints: state.userPoints - points,
-          redeemedRewardIds: [...state.redeemedRewardIds, rewardId],
-          redeemHistory: [
+        set((state) => {
+          const nextHistory = [
             {
               id: `${rewardId}-${Date.now()}`,
               name: rewardName,
@@ -273,8 +305,17 @@ export const useGameStore = create<GameStoreState>()(
               points
             },
             ...state.redeemHistory
-          ]
-        }));
+          ];
+
+          return withUpdatedAt({
+            redeemedRewardIds: [...state.redeemedRewardIds, rewardId],
+            redeemHistory: nextHistory,
+            userPoints: calculateAvailablePoints({
+              tasks: state.tasks,
+              redeemHistory: nextHistory
+            })
+          });
+        });
         await get().syncToCloud();
         return true;
       },

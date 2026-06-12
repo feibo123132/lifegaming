@@ -11,16 +11,22 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import { cn } from '../utils/helpers';
-import { rewards } from '../data/mockData';
+import { rewardCategories, rewards } from '../data/mockData';
 import { useGameStore } from '../store/useGameStore';
+import { calculateAvailablePoints } from '../lib/gameSync';
+import type { RewardCategoryId } from '../types';
 
 export function Shop() {
-  const userPoints = useGameStore((state) => state.userPoints);
+  const tasks = useGameStore((state) => state.tasks);
   const redeemedIds = useGameStore((state) => state.redeemedRewardIds);
   const redeemHistory = useGameStore((state) => state.redeemHistory);
   const redeemReward = useGameStore((state) => state.redeemReward);
   const [showAnimation, setShowAnimation] = useState(false);
   const [lastRedeemed, setLastRedeemed] = useState('');
+  const [activeCategoryId, setActiveCategoryId] = useState<RewardCategoryId>('delight');
+  const activeCategory = rewardCategories.find((category) => category.id === activeCategoryId) || rewardCategories[0];
+  const activeRewards = rewards.filter((reward) => reward.category === activeCategory.id);
+  const userPoints = calculateAvailablePoints({ tasks, redeemHistory });
 
   const handleRedeem = async (rewardId: string, name: string) => {
     const reward = rewards.find(r => r.id === rewardId);
@@ -66,68 +72,113 @@ export function Shop() {
         </div>
       </div>
 
-      {/* Rewards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Rewards Catalog */}
+      <div className="space-y-7">
         {rewards.length === 0 && (
-          <div className="pop-card col-span-full p-8 text-center">
+          <div className="pop-card p-8 text-center">
             <p className="text-xl font-black text-pop-black">暂无奖励</p>
             <p className="mt-2 font-bold text-pop-black/60">示例奖励已清空，后续可添加你自己的奖励。</p>
           </div>
         )}
-        {rewards.map((reward) => {
-          const isRedeemed = redeemedIds.includes(reward.id);
-          const canAfford = userPoints >= reward.points;
+        {rewards.length > 0 && (
+          <section className="space-y-4">
+            <div className="overflow-x-auto rounded-pop border-4 border-pop-black bg-white p-2 shadow-pop-sm">
+              <div className="grid min-w-[680px] grid-cols-4 gap-2">
+                {rewardCategories.map((category) => {
+                  const isActive = activeCategory.id === category.id;
 
-          return (
-            <div
-              key={reward.id}
-              className={cn(
-                "pop-card !p-5 transition-all",
-                isRedeemed && "opacity-75"
-              )}
-            >
-              <div className="text-6xl mb-4 text-center">{reward.icon}</div>
-              <h3 className="font-black text-lg text-pop-black text-center mb-2">
-                {reward.name}
-              </h3>
-              <div className="flex items-center justify-center gap-1 mb-4">
-                <Star className="w-5 h-5 text-pop-yellow fill-pop-yellow" />
-                <span className="font-black text-xl text-pop-black">{reward.points}</span>
-                <span className="text-sm font-bold text-pop-black/60">积分</span>
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => setActiveCategoryId(category.id)}
+                      className={cn(
+                        "flex h-14 items-center justify-center gap-2 rounded-pop border-3 px-4 text-base font-black transition-all",
+                        isActive
+                          ? "bg-pop-black text-pop-yellow border-pop-black shadow-pop-sm"
+                          : "bg-white text-pop-black border-transparent hover:border-pop-black hover:bg-pop-yellow/35"
+                      )}
+                      aria-pressed={isActive}
+                    >
+                      <span className="text-xl leading-none">{category.icon}</span>
+                      <span className="whitespace-nowrap">{category.title}</span>
+                    </button>
+                  );
+                })}
               </div>
-              
-              <button
-                onClick={() => handleRedeem(reward.id, reward.name)}
-                disabled={isRedeemed || !canAfford}
-                className={cn(
-                  "w-full py-3 rounded-pop border-4 font-black transition-all flex items-center justify-center gap-2",
-                  isRedeemed
-                    ? "bg-pop-green text-white border-pop-green cursor-default"
-                    : canAfford
-                    ? "pop-btn-red !shadow-pop-sm"
-                    : "bg-pop-black/10 text-pop-black/40 border-pop-black/20 cursor-not-allowed"
-                )}
-              >
-                {isRedeemed ? (
-                  <>
-                    <Check className="w-5 h-5" />
-                    已兑换
-                  </>
-                ) : canAfford ? (
-                  <>
-                    <Gift className="w-5 h-5" />
-                    立即兑换
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-5 h-5" />
-                    积分不足
-                  </>
-                )}
-              </button>
             </div>
-          );
-        })}
+
+            <div className="flex items-start gap-3">
+              <div className={cn("pop-icon-box h-14 w-14 text-3xl", activeCategory.colorClassName)}>
+                {activeCategory.icon}
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-2xl font-black text-pop-black">{activeCategory.title}</h3>
+                  <span className="pop-tag bg-white text-xs">{activeRewards.length} 件</span>
+                </div>
+                <p className="mt-1 font-bold text-pop-black/65">{activeCategory.description}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {activeRewards.map((reward) => {
+                const isRedeemed = redeemedIds.includes(reward.id);
+                const canAfford = userPoints >= reward.points;
+
+                return (
+                  <div
+                    key={reward.id}
+                    className={cn(
+                      "pop-card !p-5 transition-all",
+                      isRedeemed && "opacity-75"
+                    )}
+                  >
+                    <div className="text-6xl mb-4 text-center">{reward.icon}</div>
+                    <h3 className="font-black text-lg text-pop-black text-center mb-2">
+                      {reward.name}
+                    </h3>
+                    <div className="flex items-center justify-center gap-1 mb-4">
+                      <Star className="w-5 h-5 text-pop-yellow fill-pop-yellow" />
+                      <span className="font-black text-xl text-pop-black">{reward.points}</span>
+                      <span className="text-sm font-bold text-pop-black/60">积分</span>
+                    </div>
+
+                    <button
+                      onClick={() => handleRedeem(reward.id, reward.name)}
+                      disabled={isRedeemed || !canAfford}
+                      className={cn(
+                        "w-full py-3 rounded-pop border-4 font-black transition-all flex items-center justify-center gap-2",
+                        isRedeemed
+                          ? "bg-pop-green text-white border-pop-green cursor-default"
+                          : canAfford
+                          ? "pop-btn-red !shadow-pop-sm"
+                          : "bg-pop-black/10 text-pop-black/40 border-pop-black/20 cursor-not-allowed"
+                      )}
+                    >
+                      {isRedeemed ? (
+                        <>
+                          <Check className="w-5 h-5" />
+                          已兑换
+                        </>
+                      ) : canAfford ? (
+                        <>
+                          <Gift className="w-5 h-5" />
+                          立即兑换
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-5 h-5" />
+                          积分不足
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Redeem History */}

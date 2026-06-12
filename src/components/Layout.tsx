@@ -20,7 +20,7 @@ import {
 import { cn } from '../utils/helpers';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGameStore } from '../store/useGameStore';
-import { getPlayerProgress } from '../lib/gameSync';
+import { calculateAvailablePoints, getPlayerProgress } from '../lib/gameSync';
 import type { TabType } from '../types';
 
 interface LayoutProps {
@@ -32,9 +32,9 @@ interface LayoutProps {
 const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: '首页', icon: LayoutDashboard },
   { id: 'tasks', label: '任务', icon: ListTodo },
+  { id: 'shop', label: '积分商城', icon: ShoppingBag },
   { id: 'data', label: '数据记录', icon: BarChart3 },
   { id: 'npc', label: '虾教头', icon: MessageCircle },
-  { id: 'shop', label: '积分商城', icon: ShoppingBag },
   { id: 'review', label: '复盘中心', icon: PieChart },
 ];
 
@@ -44,12 +44,13 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const [nameDraft, setNameDraft] = useState('');
   const { user, logout } = useAuthStore();
   const tasks = useGameStore((state) => state.tasks);
+  const redeemHistory = useGameStore((state) => state.redeemHistory);
   const profileName = useGameStore((state) => state.profileName);
   const setProfileName = useGameStore((state) => state.setProfileName);
-  const userPoints = useGameStore((state) => state.userPoints);
   const isSyncing = useGameStore((state) => state.isSyncing);
   
   const progress = getPlayerProgress(tasks);
+  const userPoints = calculateAvailablePoints({ tasks, redeemHistory });
   const progressPercent = (progress.exp / progress.maxExp) * 100;
   const fallbackName = user?.email?.split('@')[0] || '新玩家';
   const displayName = profileName || fallbackName;

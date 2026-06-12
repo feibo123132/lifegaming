@@ -17,12 +17,12 @@ import { sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../da
 import { cn, formatDate } from '../utils/helpers';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { filterTasksByDate, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
+import { calculateAvailablePoints, filterTasksByDate, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
 
 export function Dashboard() {
   const tasks = useGameStore((state) => state.tasks);
+  const redeemHistory = useGameStore((state) => state.redeemHistory);
   const profileName = useGameStore((state) => state.profileName);
-  const userPoints = useGameStore((state) => state.userPoints);
   const isSyncing = useGameStore((state) => state.isSyncing);
   const syncError = useGameStore((state) => state.syncError);
   const user = useAuthStore((state) => state.user);
@@ -32,6 +32,7 @@ export function Dashboard() {
   const totalTasks = todayTasks.length;
   const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
   const playerProgress = getPlayerProgress(tasks, todayKey);
+  const userPoints = calculateAvailablePoints({ tasks, redeemHistory }, todayKey);
   const displayName = profileName || user?.email?.split('@')[0] || '新玩家';
   
   const todaySleep = sleepRecords[sleepRecords.length - 1];

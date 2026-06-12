@@ -13,7 +13,7 @@ export function PointsAnimation({ points, onComplete }: PointsAnimationProps) {
     const timer = setTimeout(() => {
       setVisible(false);
       onComplete();
-    }, 1500);
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, [onComplete]);

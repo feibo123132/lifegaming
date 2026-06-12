@@ -53,11 +53,22 @@ export interface VideoProject {
   deadline: string;
 }
 
+export type RewardCategoryId = 'delight' | 'recovery' | 'escape' | 'investment';
+
+export interface RewardCategory {
+  id: RewardCategoryId;
+  title: string;
+  description: string;
+  icon: string;
+  colorClassName: string;
+}
+
 export interface Reward {
   id: string;
   name: string;
   points: number;
   icon: string;
+  category: RewardCategoryId;
   redeemed: boolean;
 }
 

@@ -1,4 +1,7 @@
 {
+  "git.enabled": true,
   "git.autofetch": false,
-  "git.confirmSync": true
+  "git.confirmSync": true,
+  "git.autoRepositoryDetection": true,
+  "git.openRepositoryInParentFolders": "never"
 }
