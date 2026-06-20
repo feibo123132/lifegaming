@@ -1,5 +1,5 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
-import { Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
+import { AlertTriangle, Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
@@ -7,12 +7,17 @@ import { useGameStore } from '../store/useGameStore';
 import {
   calculateTaskCompletionStats,
   filterTasksByDate,
+  getCycleChallengeDayPoints,
+  getCycleChallengePenaltyPoints,
+  getCycleChallengeTotalPoints,
   getDefaultTaskPoints,
   getFailedTasksForReflection,
   getLocalDateKey,
   getTaskPenaltyPoints,
+  isCycleChallengeTask,
   isOverdueIncompleteTask,
   isRecurringDailyTask,
+  isTaskCompletedOnDate,
   sortTasksForDisplay
 } from '../lib/gameSync';
 import {
@@ -27,6 +32,8 @@ type TaskCategory = Exclude<CategoryFilter, 'all'>;
 export function Tasks() {
   const tasks = useGameStore((state) => state.tasks);
   const toggleSyncedTask = useGameStore((state) => state.toggleTask);
+  const completeChallengeDay = useGameStore((state) => state.completeChallengeDay);
+  const failChallenge = useGameStore((state) => state.failChallenge);
   const addSyncedTask = useGameStore((state) => state.addTask);
   const ensureDailyTasksForDate = useGameStore((state) => state.ensureDailyTasksForDate);
   const editSyncedTask = useGameStore((state) => state.editTask);
@@ -37,6 +44,8 @@ export function Tasks() {
   const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('daily');
   const [newTaskPoints, setNewTaskPoints] = useState(getDefaultTaskPoints('daily'));
   const [saveDailyTemplate, setSaveDailyTemplate] = useState(true);
+  const [isCycleChallengeEnabled, setIsCycleChallengeEnabled] = useState(false);
+  const [challengeDays, setChallengeDays] = useState(14);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingPoints, setEditingPoints] = useState(10);
@@ -86,6 +95,29 @@ export function Tasks() {
     }
   };
 
+  const checkInChallengeDay = async (taskId: string) => {
+    const { awardedPoints } = await completeChallengeDay(taskId, selectedDateKey);
+    if (!shouldPlayTaskCompletionSound(awardedPoints)) return;
+
+    playTaskCompletionSound();
+    setLastPoints(awardedPoints);
+    setShowAnimation(true);
+  };
+
+  const confirmChallengeFailure = async (
+    event: MouseEvent<HTMLButtonElement>,
+    task: (typeof tasks)[number]
+  ) => {
+    event.stopPropagation();
+    const penaltyPoints = getCycleChallengeTotalPoints(task) - task.challenge!.completedDateKeys.reduce(
+      (total, dateKey) => total + getCycleChallengeDayPoints(task, dateKey),
+      0
+    );
+    if (!window.confirm(`确认挑战失败吗？未完成部分将扣除 ${penaltyPoints} 积分和经验。`)) return;
+
+    await failChallenge(task.id);
+  };
+
   const addTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const created = await addSyncedTask({
@@ -93,7 +125,10 @@ export function Tasks() {
       category: newTaskCategory,
       points: newTaskPoints,
       dateKey: selectedDateKey,
-      saveAsDailyTemplate: newTaskCategory === 'daily' && saveDailyTemplate
+      saveAsDailyTemplate: newTaskCategory === 'daily' && saveDailyTemplate && !isCycleChallengeEnabled,
+      challengeDays: newTaskCategory === 'daily' && isCycleChallengeEnabled
+        ? Math.max(1, Math.round(challengeDays || 1))
+        : undefined
     });
 
     if (created) {
@@ -105,6 +140,16 @@ export function Tasks() {
   const selectNewTaskCategory = (category: TaskCategory) => {
     setNewTaskCategory(category);
     setNewTaskPoints(getDefaultTaskPoints(category));
+  };
+
+  const toggleDailyTemplate = (checked: boolean) => {
+    setSaveDailyTemplate(checked);
+    if (checked) setIsCycleChallengeEnabled(false);
+  };
+
+  const toggleCycleChallenge = (checked: boolean) => {
+    setIsCycleChallengeEnabled(checked);
+    if (checked) setSaveDailyTemplate(false);
   };
 
   const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
@@ -162,7 +207,7 @@ export function Tasks() {
 
     return {
       date,
-      completed: dayTasks.filter((task) => task.completed).length,
+      completed: dayTasks.filter((task) => isTaskCompletedOnDate(task, dateKey)).length,
       total: dayTasks.length,
       isSelected: dateKey === selectedDateKey,
     };
@@ -257,15 +302,39 @@ export function Tasks() {
         </div>
 
         {newTaskCategory === 'daily' && (
-          <label className="mt-3 flex w-fit cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-yellow px-4 py-2 font-black text-pop-black shadow-pop-sm">
-            <input
-              checked={saveDailyTemplate}
-              onChange={(event) => setSaveDailyTemplate(event.target.checked)}
-              className="h-5 w-5 accent-pop-green"
-              type="checkbox"
-            />
-            <span>每天自动出现</span>
-          </label>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-yellow px-4 py-2 font-black text-pop-black shadow-pop-sm">
+              <input
+                checked={saveDailyTemplate}
+                onChange={(event) => toggleDailyTemplate(event.target.checked)}
+                className="h-5 w-5 accent-pop-green"
+                type="checkbox"
+              />
+              <span>每天自动出现</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-white px-4 py-2 font-black text-pop-black shadow-pop-sm">
+              <input
+                checked={isCycleChallengeEnabled}
+                onChange={(event) => toggleCycleChallenge(event.target.checked)}
+                className="h-5 w-5 accent-pop-red"
+                type="checkbox"
+              />
+              <span>周期挑战</span>
+            </label>
+            {isCycleChallengeEnabled && (
+              <label className="block w-36">
+                <span className="mb-1 block text-xs font-black text-pop-black">连续天数</span>
+                <input
+                  value={challengeDays}
+                  onChange={(event) => setChallengeDays(Math.max(1, Number(event.target.value) || 1))}
+                  className="pop-input !px-3 !py-2 text-center font-black"
+                  type="number"
+                  min={1}
+                  step={1}
+                />
+              </label>
+            )}
+          </div>
         )}
       </form>
 
@@ -305,6 +374,17 @@ export function Tasks() {
         )}
 
         {filteredTasks.map((task) => {
+          const isChallenge = isCycleChallengeTask(task);
+          const isCompletedForDate = isTaskCompletedOnDate(task, selectedDateKey);
+          const isChallengeActive = isChallenge && task.challenge?.status === 'active';
+          const isChallengeFailed = isChallenge && task.challenge?.status === 'failed';
+          const canCheckInChallenge = isChallengeActive &&
+            !isCompletedForDate &&
+            selectedDateKey <= getLocalDateKey();
+          const challengeDayPoints = isChallenge ? getCycleChallengeDayPoints(task, selectedDateKey) : 0;
+          const challengeDayNumber = challengeDayPoints ? challengeDayPoints - task.points + 1 : 0;
+          const challengeCompletedDays = task.challenge?.completedDateKeys.length ?? 0;
+          const challengePenaltyPoints = getCycleChallengePenaltyPoints(task);
           const isOverdue = isOverdueIncompleteTask(task);
           const penaltyPoints = getTaskPenaltyPoints(task);
           const failureReasonDraft = failureReasonDrafts[task.id] ?? task.failureReason ?? '';
@@ -315,6 +395,13 @@ export function Tasks() {
             key={task.id}
             onClick={() => {
               if (editingTaskId !== task.id) {
+                if (isChallenge) {
+                  if (canCheckInChallenge) {
+                    void checkInChallengeDay(task.id);
+                  }
+                  return;
+                }
+
                 const shouldPlaySoundImmediately = shouldPlayTaskCompletionSoundBeforeToggle(
                   task.completed,
                   task.points
@@ -329,24 +416,27 @@ export function Tasks() {
             }}
             className={cn(
               "pop-list-item",
-              editingTaskId === task.id ? "cursor-default" : "cursor-pointer",
-              task.completed && "bg-pop-green/20 border-pop-green",
+              editingTaskId === task.id || (isChallenge && !canCheckInChallenge)
+                ? "cursor-default"
+                : "cursor-pointer",
+              isCompletedForDate && "bg-pop-green/20 border-pop-green",
+              isChallengeFailed && "bg-pop-red/15 border-pop-red cursor-default",
               isOverdue && "bg-pop-red/15 border-pop-red"
             )}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <div className={cn(
                 "w-8 h-8 rounded-pop border-4 flex items-center justify-center transition-all",
-                task.completed
+                isCompletedForDate
                   ? "bg-pop-green border-pop-green"
                   : isOverdue
                     ? "bg-pop-red/10 border-pop-red hover:bg-pop-red/20"
                     : "bg-white border-pop-black hover:bg-pop-yellow"
               )}>
-                {task.completed && <Check className="w-5 h-5 text-white" />}
+                {isCompletedForDate && <Check className="w-5 h-5 text-white" />}
               </div>
               
-              <div className="flex-1">
+              <div className="min-w-[12rem] flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className={cn(
                     "pop-tag text-xs",
@@ -361,10 +451,26 @@ export function Tasks() {
                       每天
                     </span>
                   )}
-                  {task.completed && (
+                  {isChallenge && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-blue px-2.5 py-0.5 text-xs font-black text-white shadow-pop-sm">
+                      周期挑战
+                    </span>
+                  )}
+                  {isChallenge && task.challenge && (
+                    <span className="pop-tag-yellow text-xs">
+                      {challengeCompletedDays}/{task.challenge.targetDays}天
+                    </span>
+                  )}
+                  {isCompletedForDate && (
                     <span className="pop-tag-yellow text-xs flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
-                      +{task.points}积分
+                      +{isChallenge ? challengeDayPoints : task.points}积分
+                    </span>
+                  )}
+                  {isChallengeFailed && (
+                    <span className="pop-tag-red text-xs flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      -{challengePenaltyPoints}积分
                     </span>
                   )}
                   {isOverdue && (
@@ -384,14 +490,21 @@ export function Tasks() {
                 ) : (
                   <p className={cn(
                     "font-bold text-lg transition-colors",
-                    task.completed ? "text-pop-black/40 line-through" : isOverdue ? "text-pop-red" : "text-pop-black"
+                    isCompletedForDate ? "text-pop-black/40 line-through" : isChallengeFailed || isOverdue ? "text-pop-red" : "text-pop-black"
                   )}>
                     {task.title}
                   </p>
                 )}
+                {isChallenge && task.challenge && (
+                  <p className="mt-1 text-sm font-bold text-pop-black/60">
+                    第 {challengeDayNumber}/{task.challenge.targetDays} 天 · 全程 {getCycleChallengeTotalPoints(task)} 积分
+                    {isChallengeFailed && ' · 挑战已失败'}
+                    {task.challenge.status === 'completed' && ' · 挑战已完成'}
+                  </p>
+                )}
               </div>
 
-              <div className="text-right">
+              <div className="shrink-0 text-right">
                 {editingTaskId === task.id ? (
                   <input
                     value={editingPoints}
@@ -401,14 +514,18 @@ export function Tasks() {
                     type="number"
                     min={1}
                     max={999}
+                    disabled={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)}
+                    title={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)
+                      ? '挑战开始后不能修改初始积分'
+                      : undefined}
                   />
                 ) : (
                   <div className={cn(
                     "pop-tag text-base",
-                    task.completed ? "bg-pop-green text-white" : isOverdue ? "bg-pop-red text-white" : "bg-pop-yellow"
+                    isCompletedForDate ? "bg-pop-green text-white" : isChallengeFailed || isOverdue ? "bg-pop-red text-white" : "bg-pop-yellow"
                   )}>
                     <Star className="w-4 h-4 mr-1 inline" />
-                    {task.points}积分
+                    {isChallenge ? challengeDayPoints : task.points}积分
                   </div>
                 )}
               </div>
@@ -437,6 +554,17 @@ export function Tasks() {
                 </div>
               ) : (
                 <div className="flex shrink-0 items-center gap-2">
+                  {isChallengeActive && (
+                    <button
+                      type="button"
+                      onClick={(event) => void confirmChallengeFailure(event, task)}
+                      className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-pop-red text-white shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+                      aria-label={`确认挑战失败：${task.title}`}
+                      title="挑战失败"
+                    >
+                      <AlertTriangle className="h-5 w-5" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(event) => startEditingTask(event, task)}

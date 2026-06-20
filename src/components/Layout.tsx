@@ -63,7 +63,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   
   const progress = getPlayerProgress(tasks);
   const userPoints = calculateAvailablePoints({ tasks, redeemHistory });
-  const progressPercent = (progress.exp / progress.maxExp) * 100;
+  const progressPercent = Math.max(0, Math.min(100, (progress.exp / progress.maxExp) * 100));
   const fallbackName = user?.email?.split('@')[0] || '新玩家';
   const displayName = profileName || fallbackName;
   const displayEmail = user?.email || '已完成个人身份认证';

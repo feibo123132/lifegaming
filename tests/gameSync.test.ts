@@ -5,21 +5,29 @@ import {
   buildCloudGameState,
   calculateAvailablePoints,
   calculateTaskCompletionStats,
+  completeCycleChallengeDay,
   createTaskTimestampForDate,
   createUserTask,
   createInitialGameData,
   ensureDailyTemplateTasks,
   filterTasksByDate,
+  failCycleChallenge,
+  getCycleChallengeDayPoints,
+  getCycleChallengePenaltyPoints,
+  getCycleChallengeTotalPoints,
   getCloudSyncErrorMessage,
   getDefaultTaskPoints,
   getLevelExpRequirement,
   getLevelTitle,
   getLocalDateKey,
   getPlayerProgress,
+  getTaskAwardedPoints,
   getTaskPenaltyPoints,
   getFailedTasksForReflection,
+  isCycleChallengeTask,
   isOverdueIncompleteTask,
   isRecurringDailyTask,
+  isTaskCompletedOnDate,
   isExampleGameData,
   mergeGameData,
   normalizeUserEmail,
@@ -141,6 +149,142 @@ test('filters tasks by their local task day', () => {
   assert.deepEqual(filterTasksByDate([june9, june10], '2026-06-10').map((task) => task.title), [
     '6月10日任务'
   ]);
+});
+
+test('creates a cycle challenge with a user-defined positive duration', () => {
+  const task = createUserTask(
+    { title: '三天不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 3 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  );
+
+  assert.ok(task);
+  assert.equal(isCycleChallengeTask(task), true);
+  assert.deepEqual(task.challenge, {
+    targetDays: 3,
+    completedDateKeys: [],
+    status: 'active'
+  });
+});
+
+test('calculates increasing challenge points and the full reward', () => {
+  const task = createUserTask(
+    { title: '两周不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 14 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  assert.equal(getCycleChallengeDayPoints(task, '2026-06-20'), 5);
+  assert.equal(getCycleChallengeDayPoints(task, '2026-06-26'), 11);
+  assert.equal(getCycleChallengeDayPoints(task, '2026-07-03'), 18);
+  assert.equal(getCycleChallengeDayPoints(task, '2026-07-04'), 0);
+  assert.equal(getCycleChallengeTotalPoints(task), 161);
+});
+
+test('shows a cycle challenge on every date in its configured range', () => {
+  const task = createUserTask(
+    { title: '两周不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 14 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  assert.equal(filterTasksByDate([task], '2026-06-20').length, 1);
+  assert.equal(filterTasksByDate([task], '2026-07-03').length, 1);
+  assert.equal(filterTasksByDate([task], '2026-07-04').length, 0);
+});
+
+test('supports historical challenge check-ins without double-awarding a date', () => {
+  const task = createUserTask(
+    { title: '两周不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 14 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  const daySeven = completeCycleChallengeDay(task, '2026-06-26', '2026-06-27T08:00:00.000');
+  const duplicate = completeCycleChallengeDay(daySeven.task, '2026-06-26', '2026-06-27T09:00:00.000');
+
+  assert.equal(daySeven.pointsDelta, 11);
+  assert.deepEqual(daySeven.task.challenge?.completedDateKeys, ['2026-06-26']);
+  assert.equal(isTaskCompletedOnDate(daySeven.task, '2026-06-26'), true);
+  assert.equal(duplicate.pointsDelta, 0);
+  assert.deepEqual(duplicate.task, daySeven.task);
+});
+
+test('does not allow a cycle challenge to check in a future date', () => {
+  const task = createUserTask(
+    { title: '三天不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 3 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  const result = completeCycleChallengeDay(task, '2026-06-21', '2026-06-20T20:00:00.000');
+
+  assert.equal(result.pointsDelta, 0);
+  assert.deepEqual(result.task, task);
+});
+
+test('keeps the original challenge points after the first check-in', () => {
+  const task = createUserTask(
+    { title: '三天不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 3 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+  const started = completeCycleChallengeDay(task, '2026-06-20', '2026-06-20T20:00:00.000').task;
+
+  const updated = updateUserTask(started, { title: '修改后的名称', points: 99 });
+
+  assert.equal(updated?.title, '修改后的名称');
+  assert.equal(updated?.points, 5);
+});
+
+test('completes a challenge after every configured date is checked in', () => {
+  let task = createUserTask(
+    { title: '三天不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 3 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  for (const dateKey of ['2026-06-20', '2026-06-21', '2026-06-22']) {
+    task = completeCycleChallengeDay(task, dateKey, `${dateKey}T20:00:00.000`).task;
+  }
+
+  assert.equal(task.completed, true);
+  assert.equal(task.challenge?.status, 'completed');
+  assert.equal(getTaskAwardedPoints(task), 18);
+});
+
+test('turns all unfinished challenge rewards into a failure penalty', () => {
+  let task = createUserTask(
+    { title: '两周不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 14 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  for (let day = 0; day < 7; day += 1) {
+    const dateKey = shiftDateKey('2026-06-20', day);
+    task = completeCycleChallengeDay(task, dateKey, `${dateKey}T20:00:00.000`).task;
+  }
+
+  const failed = failCycleChallenge(task, '2026-06-27T08:00:00.000');
+
+  assert.equal(getTaskAwardedPoints(failed.task), 56);
+  assert.equal(getCycleChallengePenaltyPoints(failed.task), 105);
+  assert.equal(failed.pointsDelta, -105);
+  assert.equal(failed.task.challenge?.status, 'failed');
+  assert.equal(calculateAvailablePoints({ tasks: [failed.task], redeemHistory: [] }, '2026-06-27'), -49);
+  assert.equal(getPlayerProgress([failed.task], '2026-06-27').totalExp, -49);
+  assert.equal(getPlayerProgress([failed.task], '2026-06-27').exp, -49);
+});
+
+test('does not apply ordinary overdue penalties to cycle challenges', () => {
+  const task = createUserTask(
+    { title: '两周不发动态', category: 'daily', points: 5, dateKey: '2026-06-20', challengeDays: 14 },
+    'task-challenge',
+    '2026-06-20T08:00:00.000'
+  )!;
+
+  assert.equal(isOverdueIncompleteTask(task, '2026-06-21'), false);
+  assert.equal(getTaskPenaltyPoints(task, '2026-06-21'), 0);
 });
 
 test('marks only past-day incomplete tasks as overdue', () => {

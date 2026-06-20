@@ -1,3 +1,12 @@
+export type CycleChallengeStatus = 'active' | 'completed' | 'failed';
+
+export interface CycleChallenge {
+  targetDays: number;
+  completedDateKeys: string[];
+  status: CycleChallengeStatus;
+  failedAt?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -9,6 +18,7 @@ export interface Task {
   completedAt?: Date;
   templateId?: string;
   failureReason?: string;
+  challenge?: CycleChallenge;
 }
 
 export interface DailyTaskTemplate {

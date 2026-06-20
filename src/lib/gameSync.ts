@@ -44,6 +44,7 @@ export interface NewTaskInput {
   dateKey?: string;
   saveAsDailyTemplate?: boolean;
   templateId?: string;
+  challengeDays?: number;
 }
 
 export interface EditTaskInput {
@@ -201,6 +202,9 @@ export const createUserTask = (
   if (!title) return null;
 
   const points = Math.max(1, Math.min(999, Math.round(input.points || 1)));
+  const challengeDays = input.category === 'daily' && input.challengeDays
+    ? Math.max(1, Math.round(input.challengeDays))
+    : 0;
 
   return {
     id,
@@ -209,7 +213,16 @@ export const createUserTask = (
     points,
     completed: false,
     createdAt: input.dateKey ? createTaskTimestampForDate(input.dateKey, now) : now,
-    ...(input.category === 'daily' && input.templateId ? { templateId: input.templateId } : {})
+    ...(input.category === 'daily' && input.templateId && !challengeDays ? { templateId: input.templateId } : {}),
+    ...(challengeDays
+      ? {
+          challenge: {
+            targetDays: challengeDays,
+            completedDateKeys: [],
+            status: 'active' as const
+          }
+        }
+      : {})
   };
 };
 
@@ -234,7 +247,12 @@ export const updateUserTask = (task: Task, input: EditTaskInput): Task | null =>
   const title = input.title.trim();
   if (!title) return null;
 
-  const points = Math.max(1, Math.min(999, Math.round(input.points || 1)));
+  const requestedPoints = Math.max(1, Math.min(999, Math.round(input.points || 1)));
+  const points = task.challenge && (
+    task.challenge.completedDateKeys.length > 0 || task.challenge.status !== 'active'
+  )
+    ? task.points
+    : requestedPoints;
 
   return {
     ...task,
@@ -265,16 +283,132 @@ export const saveTaskFailureReason = (
   });
 };
 
-export const getTaskAwardedPoints = (task: Task): number =>
-  task.completed ? task.completedPoints ?? task.points : 0;
-
 const getTaskDateKey = (task: Task): string =>
   getLocalDateKey(task.createdAt || new Date(getTaskCreatedTime(task)));
+
+export const isCycleChallengeTask = (task: Task): boolean =>
+  task.category === 'daily' && Boolean(task.challenge);
+
+const getCycleChallengeDateKeys = (task: Task): string[] => {
+  if (!isCycleChallengeTask(task) || !task.challenge) return [];
+  const startDateKey = getTaskDateKey(task);
+
+  return Array.from(
+    { length: Math.max(1, Math.round(task.challenge.targetDays || 1)) },
+    (_, index) => shiftDateKey(startDateKey, index)
+  );
+};
+
+export const getCycleChallengeDayPoints = (task: Task, dateKey: string): number => {
+  const dayIndex = getCycleChallengeDateKeys(task).indexOf(dateKey);
+  return dayIndex >= 0 ? task.points + dayIndex : 0;
+};
+
+export const getCycleChallengeTotalPoints = (task: Task): number =>
+  getCycleChallengeDateKeys(task).reduce(
+    (total, dateKey) => total + getCycleChallengeDayPoints(task, dateKey),
+    0
+  );
+
+export const isTaskCompletedOnDate = (task: Task, dateKey: string): boolean => {
+  if (isCycleChallengeTask(task)) {
+    return task.challenge?.completedDateKeys.includes(dateKey) ?? false;
+  }
+
+  return task.completed && getTaskDateKey(task) === dateKey;
+};
+
+export const completeCycleChallengeDay = (
+  task: Task,
+  dateKey: string,
+  now = new Date().toISOString()
+): { task: Task; pointsDelta: number } => {
+  if (!isCycleChallengeTask(task) || !task.challenge || task.challenge.status !== 'active') {
+    return { task, pointsDelta: 0 };
+  }
+
+  const pointsDelta = getCycleChallengeDayPoints(task, dateKey);
+  if (
+    !pointsDelta ||
+    dateKey > getLocalDateKey(now) ||
+    task.challenge.completedDateKeys.includes(dateKey)
+  ) {
+    return { task, pointsDelta: 0 };
+  }
+
+  const completedDateKeys = [...task.challenge.completedDateKeys, dateKey].sort();
+  const isCompleted = completedDateKeys.length >= task.challenge.targetDays;
+
+  return {
+    task: {
+      ...task,
+      completed: isCompleted,
+      completedAt: isCompleted ? now as unknown as Date : undefined,
+      completedPoints: isCompleted ? getCycleChallengeTotalPoints(task) : undefined,
+      challenge: {
+        ...task.challenge,
+        completedDateKeys,
+        status: isCompleted ? 'completed' : 'active'
+      }
+    },
+    pointsDelta
+  };
+};
+
+export const getCycleChallengePenaltyPoints = (task: Task): number => {
+  if (!isCycleChallengeTask(task) || task.challenge?.status !== 'failed') return 0;
+  const completedDateKeySet = new Set(task.challenge.completedDateKeys);
+
+  return getCycleChallengeDateKeys(task).reduce(
+    (total, dateKey) => completedDateKeySet.has(dateKey)
+      ? total
+      : total + getCycleChallengeDayPoints(task, dateKey),
+    0
+  );
+};
+
+export const failCycleChallenge = (
+  task: Task,
+  now = new Date().toISOString()
+): { task: Task; pointsDelta: number } => {
+  if (!isCycleChallengeTask(task) || !task.challenge || task.challenge.status !== 'active') {
+    return { task, pointsDelta: 0 };
+  }
+
+  const failedTask: Task = {
+    ...task,
+    completed: false,
+    completedAt: undefined,
+    completedPoints: undefined,
+    challenge: {
+      ...task.challenge,
+      status: 'failed',
+      failedAt: now
+    }
+  };
+  const penaltyPoints = getCycleChallengePenaltyPoints(failedTask);
+
+  return {
+    task: failedTask,
+    pointsDelta: -penaltyPoints
+  };
+};
+
+export const getTaskAwardedPoints = (task: Task): number => {
+  if (isCycleChallengeTask(task) && task.challenge) {
+    return task.challenge.completedDateKeys.reduce(
+      (total, dateKey) => total + getCycleChallengeDayPoints(task, dateKey),
+      0
+    );
+  }
+
+  return task.completed ? task.completedPoints ?? task.points : 0;
+};
 
 export const isOverdueIncompleteTask = (
   task: Task,
   today: Date | string = new Date()
-): boolean => !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
+): boolean => !isCycleChallengeTask(task) && !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
 
 export const getTaskPenaltyPoints = (
   task: Task,
@@ -293,6 +427,10 @@ export const toggleUserTaskCompletion = (
   task: Task,
   now = new Date().toISOString()
 ): { task: Task; pointsDelta: number } => {
+  if (isCycleChallengeTask(task)) {
+    return { task, pointsDelta: 0 };
+  }
+
   if (task.completed) {
     const pointsDelta = -getTaskAwardedPoints(task);
 
@@ -325,13 +463,21 @@ export const calculateAvailablePoints = (
   const awardedPoints = data.tasks.reduce((total, task) => total + getTaskAwardedPoints(task), 0);
   const spentPoints = data.redeemHistory.reduce((total, item) => total + Math.max(0, item.points || 0), 0);
   const penaltyPoints = getOverdueTaskPenaltyPoints(data.tasks, today);
+  const challengePenaltyPoints = data.tasks.reduce(
+    (total, task) => total + getCycleChallengePenaltyPoints(task),
+    0
+  );
 
-  return Math.max(0, awardedPoints - spentPoints - penaltyPoints);
+  return awardedPoints - spentPoints - penaltyPoints - challengePenaltyPoints;
 };
 
-const getTaskCompletionDateKey = (task: Task): string | null => {
-  if (!task.completed) return null;
-  return getLocalDateKey(task.completedAt || task.createdAt || new Date(getTaskCreatedTime(task)));
+const getTaskCompletionDateKeys = (task: Task): string[] => {
+  if (isCycleChallengeTask(task)) {
+    return task.challenge?.completedDateKeys ?? [];
+  }
+
+  if (!task.completed) return [];
+  return [getLocalDateKey(task.completedAt || task.createdAt || new Date(getTaskCreatedTime(task)))];
 };
 
 export const getPlayerProgress = (
@@ -339,7 +485,11 @@ export const getPlayerProgress = (
   today: Date | string = new Date()
 ): PlayerProgress => {
   const awardedExp = tasks.reduce((total, task) => total + getTaskAwardedPoints(task), 0);
-  const totalExp = Math.max(0, awardedExp - getOverdueTaskPenaltyPoints(tasks, today));
+  const challengePenaltyExp = tasks.reduce(
+    (total, task) => total + getCycleChallengePenaltyPoints(task),
+    0
+  );
+  const totalExp = awardedExp - getOverdueTaskPenaltyPoints(tasks, today) - challengePenaltyExp;
   let level = 1;
   let exp = totalExp;
   let maxExp = getLevelExpRequirement(level);
@@ -354,8 +504,7 @@ export const getPlayerProgress = (
   const levelTitle = getLevelTitle(level);
   const completedDateKeys = new Set(
     tasks
-      .map(getTaskCompletionDateKey)
-      .filter((dateKey): dateKey is string => Boolean(dateKey))
+      .flatMap(getTaskCompletionDateKeys)
   );
 
   let cursor = getLocalDateKey(today);
@@ -422,7 +571,9 @@ export const sortTasksForDisplay = (tasks: Task[]): Task[] =>
   });
 
 export const filterTasksByDate = (tasks: Task[], dateKey: string): Task[] =>
-  tasks.filter((task) => getTaskDateKey(task) === dateKey);
+  tasks.filter((task) => isCycleChallengeTask(task)
+    ? getCycleChallengeDateKeys(task).includes(dateKey)
+    : getTaskDateKey(task) === dateKey);
 
 export const calculateTaskCompletionStats = (
   tasks: Task[],
@@ -434,12 +585,13 @@ export const calculateTaskCompletionStats = (
     : viewMode === 'week'
       ? getWeekDateKeys(selectedDateKey)
       : getMonthDateKeys(selectedDateKey);
-  const dateKeySet = new Set(dateKeys);
-  const scopedTasks = tasks.filter((task) => (
-    dateKeySet.has(getTaskDateKey(task))
-  ));
-  const completed = scopedTasks.filter((task) => task.completed).length;
-  const total = scopedTasks.length;
+  const taskOccurrences = dateKeys.flatMap((dateKey) =>
+    filterTasksByDate(tasks, dateKey).map((task) => ({ task, dateKey }))
+  );
+  const completed = taskOccurrences.filter(({ task, dateKey }) =>
+    isTaskCompletedOnDate(task, dateKey)
+  ).length;
+  const total = taskOccurrences.length;
 
   return {
     completed,

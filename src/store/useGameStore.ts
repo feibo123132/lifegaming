@@ -4,10 +4,12 @@ import { db } from '../lib/cloudbase';
 import {
   buildCloudGameState,
   calculateAvailablePoints,
+  completeCycleChallengeDay,
   createDailyTemplate,
   createUserTask,
   createInitialGameData,
   ensureDailyTemplateTasks,
+  failCycleChallenge,
   getCloudSyncErrorMessage,
   mergeGameData,
   normalizeUserEmail,
@@ -42,6 +44,8 @@ interface GameStoreState extends GameData {
   setTaskFailureReason: (taskId: string, reason: string) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<boolean>;
   toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
+  completeChallengeDay: (taskId: string, dateKey: string) => Promise<{ awardedPoints: number }>;
+  failChallenge: (taskId: string) => Promise<{ penaltyPoints: number }>;
   redeemReward: (rewardId: string, rewardName: string, points: number) => Promise<boolean>;
   setNpcState: (state: NpcState) => Promise<void>;
   addNpcMessage: (message: Omit<SyncedNpcMessage, 'timestamp'> & { timestamp?: string }) => Promise<void>;
@@ -299,6 +303,48 @@ export const useGameStore = create<GameStoreState>()(
         });
         await get().syncToCloud();
         return { awardedPoints };
+      },
+
+      completeChallengeDay: async (taskId, dateKey) => {
+        const task = get().tasks.find((item) => item.id === taskId);
+        if (!task) return { awardedPoints: 0 };
+        const result = completeCycleChallengeDay(task, dateKey);
+        if (result.task === task) return { awardedPoints: 0 };
+
+        set((state) => {
+          const nextTasks = state.tasks.map((item) => item.id === taskId ? result.task : item);
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
+        await get().syncToCloud();
+        return { awardedPoints: result.pointsDelta };
+      },
+
+      failChallenge: async (taskId) => {
+        const task = get().tasks.find((item) => item.id === taskId);
+        if (!task) return { penaltyPoints: 0 };
+        const result = failCycleChallenge(task);
+        if (result.task === task) return { penaltyPoints: 0 };
+
+        set((state) => {
+          const nextTasks = state.tasks.map((item) => item.id === taskId ? result.task : item);
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
+        await get().syncToCloud();
+        return { penaltyPoints: Math.abs(result.pointsDelta) };
       },
 
       redeemReward: async (rewardId, rewardName, points) => {
