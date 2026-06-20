@@ -8,6 +8,7 @@ export interface Task {
   completedPoints?: number;
   completedAt?: Date;
   templateId?: string;
+  failureReason?: string;
 }
 
 export interface DailyTaskTemplate {

@@ -14,6 +14,7 @@ import {
   pickLatestCloudGameDoc,
   reconcileGameDataPoints,
   resetExampleGameData,
+  saveTaskFailureReason,
   shouldUseLocalGameDataForSync,
   toggleUserTaskCompletion,
   updateUserTask,
@@ -38,6 +39,7 @@ interface GameStoreState extends GameData {
   addTask: (input: NewTaskInput) => Promise<boolean>;
   ensureDailyTasksForDate: (dateKey: string) => Promise<void>;
   editTask: (taskId: string, input: EditTaskInput) => Promise<boolean>;
+  setTaskFailureReason: (taskId: string, reason: string) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<boolean>;
   toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
   redeemReward: (rewardId: string, rewardName: string, points: number) => Promise<boolean>;
@@ -244,6 +246,16 @@ export const useGameStore = create<GameStoreState>()(
             })
           });
         });
+        await get().syncToCloud();
+        return true;
+      },
+
+      setTaskFailureReason: async (taskId, reason) => {
+        if (!get().tasks.some((item) => item.id === taskId)) return false;
+
+        set((state) => withUpdatedAt({
+          tasks: saveTaskFailureReason(state.tasks, taskId, reason)
+        }));
         await get().syncToCloud();
         return true;
       },

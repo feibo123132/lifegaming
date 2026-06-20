@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Flame, KeyRound, Loader2, Lock, Mail, ShieldCheck, Sparkles, Star, Trophy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { getDefaultLoginCredentials, getInitialLoginMode } from '../lib/defaultLoginCredentials';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -27,6 +28,7 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const redirectTo = (location.state as LocationState | null)?.from?.pathname || '/';
+  const defaultCredentials = getDefaultLoginCredentials(import.meta.env);
   const {
     user,
     sendCode,
@@ -38,10 +40,10 @@ export const LoginPage = () => {
     error
   } = useAuthStore();
 
-  const [mode, setMode] = useState<LoginMode>('code');
-  const [email, setEmail] = useState('');
+  const [mode, setMode] = useState<LoginMode>(() => getInitialLoginMode(defaultCredentials));
+  const [email, setEmail] = useState(defaultCredentials.email);
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(defaultCredentials.password);
   const [setupCode, setSetupCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

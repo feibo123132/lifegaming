@@ -243,6 +243,28 @@ export const updateUserTask = (task: Task, input: EditTaskInput): Task | null =>
   };
 };
 
+export const saveTaskFailureReason = (
+  tasks: Task[],
+  taskId: string,
+  reason: string
+): Task[] => {
+  const normalizedReason = reason.trim();
+
+  return tasks.map((task) => {
+    if (task.id !== taskId) return task;
+
+    if (!normalizedReason) {
+      const { failureReason: _failureReason, ...taskWithoutReason } = task;
+      return taskWithoutReason;
+    }
+
+    return {
+      ...task,
+      failureReason: normalizedReason
+    };
+  });
+};
+
 export const getTaskAwardedPoints = (task: Task): number =>
   task.completed ? task.completedPoints ?? task.points : 0;
 
@@ -424,6 +446,24 @@ export const calculateTaskCompletionStats = (
     total,
     completionRate: total > 0 ? (completed / total) * 100 : 0
   };
+};
+
+export const getFailedTasksForReflection = (
+  tasks: Task[],
+  viewMode: ViewMode,
+  selectedDateKey: string,
+  today: Date | string = new Date()
+): Task[] => {
+  const dateKeys = viewMode === 'day'
+    ? [selectedDateKey]
+    : viewMode === 'week'
+      ? getWeekDateKeys(selectedDateKey)
+      : getMonthDateKeys(selectedDateKey);
+  const dateKeySet = new Set(dateKeys);
+
+  return tasks
+    .filter((task) => dateKeySet.has(getTaskDateKey(task)) && isOverdueIncompleteTask(task, today))
+    .sort((a, b) => getTaskCreatedTime(a) - getTaskCreatedTime(b));
 };
 
 export const isRecurringDailyTask = (task: Task): boolean =>

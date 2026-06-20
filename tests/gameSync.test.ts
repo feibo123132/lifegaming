@@ -17,6 +17,7 @@ import {
   getLocalDateKey,
   getPlayerProgress,
   getTaskPenaltyPoints,
+  getFailedTasksForReflection,
   isOverdueIncompleteTask,
   isRecurringDailyTask,
   isExampleGameData,
@@ -25,6 +26,7 @@ import {
   pickLatestCloudGameDoc,
   reconcileGameDataPoints,
   resetExampleGameData,
+  saveTaskFailureReason,
   shiftDateKey,
   shouldUseLocalGameDataForSync,
   sortTasksForDisplay,
@@ -260,6 +262,51 @@ test('calculates task completion stats for day week and month views', () => {
     total: 4,
     completionRate: 75
   });
+});
+
+test('finds failed unfinished tasks for reflection by day week and month ranges', () => {
+  const mondayFailed = createUserTask(
+    { title: 'Monday failed', category: 'daily', points: 10, dateKey: '2026-06-08' },
+    'task-monday-failed',
+    '2026-06-08T08:00:00.000'
+  )!;
+  const selectedFailed = createUserTask(
+    { title: 'Selected failed', category: 'main', points: 20, dateKey: '2026-06-11' },
+    'task-selected-failed',
+    '2026-06-11T08:00:00.000'
+  )!;
+  const completedFailedDay = toggleUserTaskCompletion(
+    createUserTask(
+      { title: 'Completed should not reflect', category: 'side', points: 15, dateKey: '2026-06-12' },
+      'task-completed',
+      '2026-06-12T08:00:00.000'
+    )!,
+    '2026-06-12T10:00:00.000'
+  ).task;
+  const nextWeekFailed = createUserTask(
+    { title: 'Next week failed', category: 'daily', points: 10, dateKey: '2026-06-15' },
+    'task-next-week-failed',
+    '2026-06-15T08:00:00.000'
+  )!;
+  const futureOpen = createUserTask(
+    { title: 'Future open', category: 'daily', points: 10, dateKey: '2026-06-19' },
+    'task-future-open',
+    '2026-06-19T08:00:00.000'
+  )!;
+  const tasks = [mondayFailed, selectedFailed, completedFailedDay, nextWeekFailed, futureOpen];
+
+  assert.deepEqual(
+    getFailedTasksForReflection(tasks, 'day', '2026-06-11', '2026-06-17').map((task) => task.id),
+    ['task-selected-failed']
+  );
+  assert.deepEqual(
+    getFailedTasksForReflection(tasks, 'week', '2026-06-11', '2026-06-17').map((task) => task.id),
+    ['task-monday-failed', 'task-selected-failed']
+  );
+  assert.deepEqual(
+    getFailedTasksForReflection(tasks, 'month', '2026-06-11', '2026-06-17').map((task) => task.id),
+    ['task-monday-failed', 'task-selected-failed', 'task-next-week-failed']
+  );
 });
 
 test('generates daily template tasks for a selected date without duplicates', () => {
@@ -577,6 +624,43 @@ test('does not update a task with a blank title', () => {
   assert.ok(task);
 
   assert.equal(updateUserTask(task, { title: '   ', points: 25 }), null);
+});
+
+test('saves a failure reason only on the selected recurring task instance', () => {
+  const yesterday = {
+    ...createUserTask(
+      { title: 'Daily screen limit', category: 'daily', points: 10, templateId: 'daily-template-1', dateKey: '2026-06-16' },
+      'task-2026-06-16-daily-template-1',
+      '2026-06-16T08:00:00.000'
+    )!,
+    templateId: 'daily-template-1'
+  };
+  const today = {
+    ...createUserTask(
+      { title: 'Daily screen limit', category: 'daily', points: 10, templateId: 'daily-template-1', dateKey: '2026-06-17' },
+      'task-2026-06-17-daily-template-1',
+      '2026-06-17T08:00:00.000'
+    )!,
+    templateId: 'daily-template-1'
+  };
+  const tomorrow = {
+    ...createUserTask(
+      { title: 'Daily screen limit', category: 'daily', points: 10, templateId: 'daily-template-1', dateKey: '2026-06-18' },
+      'task-2026-06-18-daily-template-1',
+      '2026-06-18T08:00:00.000'
+    )!,
+    templateId: 'daily-template-1'
+  };
+
+  const nextTasks = saveTaskFailureReason(
+    [yesterday, today, tomorrow],
+    today.id,
+    '  Lunch scroll took too long.  '
+  );
+
+  assert.equal(nextTasks.find((task) => task.id === yesterday.id)?.failureReason, undefined);
+  assert.equal(nextTasks.find((task) => task.id === today.id)?.failureReason, 'Lunch scroll took too long.');
+  assert.equal(nextTasks.find((task) => task.id === tomorrow.id)?.failureReason, undefined);
 });
 
 test('sorts tasks by category priority and then newest creation time', () => {

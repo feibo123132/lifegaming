@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
   ListTodo, 
@@ -21,6 +21,14 @@ import { cn } from '../utils/helpers';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGameStore } from '../store/useGameStore';
 import { calculateAvailablePoints, getPlayerProgress } from '../lib/gameSync';
+import {
+  getNextThemeMode,
+  getThemeModeClassName,
+  getThemeModeLabel,
+  normalizeThemeMode,
+  THEME_MODE_STORAGE_KEY,
+  type ThemeMode
+} from '../lib/theme';
 import type { TabType } from '../types';
 
 interface LayoutProps {
@@ -42,6 +50,10 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'pop';
+    return normalizeThemeMode(window.localStorage.getItem(THEME_MODE_STORAGE_KEY));
+  });
   const { user, logout } = useAuthStore();
   const tasks = useGameStore((state) => state.tasks);
   const redeemHistory = useGameStore((state) => state.redeemHistory);
@@ -55,6 +67,11 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const fallbackName = user?.email?.split('@')[0] || '新玩家';
   const displayName = profileName || fallbackName;
   const displayEmail = user?.email || '已完成个人身份认证';
+  const themeLabel = getThemeModeLabel(themeMode);
+
+  useEffect(() => {
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   const handleLogout = async () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -72,8 +89,12 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
     setIsEditingName(false);
   };
 
+  const toggleThemeMode = () => {
+    setThemeMode((current) => getNextThemeMode(current));
+  };
+
   return (
-    <div className="min-h-screen bg-pop-yellow">
+    <div className={cn("min-h-screen bg-pop-yellow", getThemeModeClassName(themeMode))}>
       {/* Mobile Header */}
       <div className="lg:hidden bg-white border-b-4 border-pop-black px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
@@ -253,6 +274,19 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
             </nav>
 
             {/* Footer Decoration */}
+            <button
+              type="button"
+              onClick={toggleThemeMode}
+              className="theme-toggle mt-6 flex w-full items-center justify-between rounded-pop border-4 border-pop-black bg-white px-5 py-3 font-black text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+              aria-label={`切换界面主题，当前为${themeLabel}`}
+              title="切换主题"
+            >
+              <span>界面主题</span>
+              <span className="rounded-full border-3 border-pop-black bg-pop-yellow px-3 py-1 text-sm">
+                {themeLabel}
+              </span>
+            </button>
+
             <div className="mt-8 p-4 bg-pop-blue rounded-pop border-4 border-pop-black text-center">
               <p className="text-white font-bold text-sm">🎮 游戏人生</p>
               <p className="text-white/80 text-xs mt-1">让自律变得有趣！</p>

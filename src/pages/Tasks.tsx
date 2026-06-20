@@ -8,6 +8,7 @@ import {
   calculateTaskCompletionStats,
   filterTasksByDate,
   getDefaultTaskPoints,
+  getFailedTasksForReflection,
   getLocalDateKey,
   getTaskPenaltyPoints,
   isOverdueIncompleteTask,
@@ -29,6 +30,7 @@ export function Tasks() {
   const addSyncedTask = useGameStore((state) => state.addTask);
   const ensureDailyTasksForDate = useGameStore((state) => state.ensureDailyTasksForDate);
   const editSyncedTask = useGameStore((state) => state.editTask);
+  const setTaskFailureReason = useGameStore((state) => state.setTaskFailureReason);
   const deleteSyncedTask = useGameStore((state) => state.deleteTask);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -38,7 +40,10 @@ export function Tasks() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingPoints, setEditingPoints] = useState(10);
+  const [failureReasonDrafts, setFailureReasonDrafts] = useState<Record<string, string>>({});
+  const [expandedFailureReasonIds, setExpandedFailureReasonIds] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<ViewMode>('day');
+  const [isReflectionMode, setIsReflectionMode] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState(() => getLocalDateKey());
   const [showAnimation, setShowAnimation] = useState(false);
   const [lastPoints, setLastPoints] = useState(0);
@@ -59,6 +64,12 @@ export function Tasks() {
   const completedCount = currentViewStats.completed;
   const totalCount = currentViewStats.total;
   const completionRate = currentViewStats.completionRate;
+  const reflectionTasks = getFailedTasksForReflection(tasks, viewMode, selectedDateKey);
+  const reflectionScopeLabel = viewMode === 'day'
+    ? selectedDateLabel
+    : viewMode === 'week'
+      ? '本周'
+      : '本月';
 
   useEffect(() => {
     void ensureDailyTasksForDate(selectedDateKey);
@@ -129,6 +140,20 @@ export function Tasks() {
     }
   };
 
+  const saveFailureReason = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
+    event.stopPropagation();
+    const fallbackReason = tasks.find((task) => task.id === taskId)?.failureReason || '';
+    await setTaskFailureReason(taskId, failureReasonDrafts[taskId] ?? fallbackReason);
+  };
+
+  const toggleFailureReasonPanel = (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
+    event.stopPropagation();
+    setExpandedFailureReasonIds((current) => ({
+      ...current,
+      [taskId]: !current[taskId]
+    }));
+  };
+
   const weekDates = getWeekDates(new Date(selectedDate));
 
   const weekData = weekDates.map((date) => {
@@ -176,7 +201,6 @@ export function Tasks() {
               onChange={(event) => setNewTaskTitle(event.target.value)}
               className="pop-input w-full"
               placeholder="今天要完成什么？"
-              maxLength={40}
             />
           </div>
 
@@ -283,6 +307,8 @@ export function Tasks() {
         {filteredTasks.map((task) => {
           const isOverdue = isOverdueIncompleteTask(task);
           const penaltyPoints = getTaskPenaltyPoints(task);
+          const failureReasonDraft = failureReasonDrafts[task.id] ?? task.failureReason ?? '';
+          const isFailureReasonExpanded = Boolean(expandedFailureReasonIds[task.id]);
 
           return (
           <div
@@ -354,7 +380,6 @@ export function Tasks() {
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => setEditingTitle(event.target.value)}
                     className="pop-input !px-3 !py-2 text-lg font-bold"
-                    maxLength={40}
                   />
                 ) : (
                   <p className={cn(
@@ -433,6 +458,67 @@ export function Tasks() {
                 </div>
               )}
             </div>
+            {isOverdue && (
+              <div
+                className="mt-4 rounded-pop border-4 border-pop-black bg-white p-3 shadow-pop-sm"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className={cn(
+                  "flex flex-wrap items-center justify-between gap-3",
+                  isFailureReasonExpanded && "mb-3"
+                )}>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-black text-pop-red">失败原因</p>
+                      <span className={cn(
+                        "pop-tag text-xs",
+                        task.failureReason ? "bg-pop-green text-white" : "bg-pop-yellow text-pop-black"
+                      )}>
+                        {task.failureReason ? "已记录" : "待填写"}
+                      </span>
+                    </div>
+                    {!isFailureReasonExpanded && task.failureReason && (
+                      <p className="mt-1 max-w-3xl truncate text-sm font-bold text-pop-black/60">
+                        {task.failureReason}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => toggleFailureReasonPanel(event, task.id)}
+                    className="rounded-pop border-4 border-pop-black bg-white px-4 py-2 text-sm font-black text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-pop-yellow hover:shadow-pop"
+                    aria-expanded={isFailureReasonExpanded}
+                  >
+                    {isFailureReasonExpanded ? "折叠" : "展开"}
+                  </button>
+                </div>
+                {isFailureReasonExpanded && (
+                  <>
+                    <p className="mb-3 text-xs font-bold text-pop-black/55">
+                      只记录在这一天的任务上，不会影响昨天或明天的同名日常。
+                    </p>
+                    <textarea
+                      value={failureReasonDraft}
+                      onChange={(event) => setFailureReasonDrafts((drafts) => ({
+                        ...drafts,
+                        [task.id]: event.target.value
+                      }))}
+                      className="pop-input min-h-[88px] w-full resize-y text-sm font-bold leading-relaxed"
+                      placeholder="这次为什么失败？当时发生了什么？下次可以提前做一个什么小动作？"
+                    />
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={(event) => void saveFailureReason(event, task.id)}
+                        className="rounded-pop border-4 border-pop-black bg-pop-red px-5 py-2 text-sm font-black text-white shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+                      >
+                        保存原因
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           );
         })}
@@ -607,6 +693,78 @@ export function Tasks() {
     </div>
   );
 
+  const renderReflectionView = () => (
+    <div className="space-y-5">
+      <div className="pop-card bg-white !p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-2xl font-black text-pop-black">
+              <Flame className="h-7 w-7 text-pop-red" />
+              三省吾身
+            </h3>
+            <p className="mt-1 font-bold text-pop-black/65">
+              {reflectionScopeLabel}共有 {reflectionTasks.length} 个未完成任务，挑一个坐下来好好复盘。
+            </p>
+          </div>
+          <span className="pop-tag-red text-base">面壁 {reflectionTasks.length} 项</span>
+        </div>
+      </div>
+
+      {reflectionTasks.length === 0 ? (
+        <div className="pop-card bg-white p-8 text-center">
+          <div className="pop-icon-box mx-auto mb-4 h-16 w-16 bg-pop-green">
+            <Check className="h-8 w-8 text-white" />
+          </div>
+          <p className="text-xl font-black text-pop-black">这一段没有需要面壁的任务</p>
+          <p className="mt-2 text-sm font-bold text-pop-black/60">继续保持，别忘了给自己一点正反馈。</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {reflectionTasks.map((task) => {
+            const taskDateKey = getLocalDateKey(task.createdAt || selectedDateKey);
+            const penaltyPoints = getTaskPenaltyPoints(task);
+
+            return (
+              <article key={task.id} className="pop-card border-pop-red bg-white !p-5">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="pop-tag bg-pop-yellow text-xs">{taskDateKey}</span>
+                  <span className={cn(
+                    "pop-tag text-xs",
+                    task.category === 'main' && "bg-pop-yellow text-pop-black",
+                    task.category === 'side' && "bg-pop-blue text-white",
+                    task.category === 'daily' && "bg-pop-green text-white"
+                  )}>
+                    {CATEGORY_LABELS[task.category]}
+                  </span>
+                  {isRecurringDailyTask(task) && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
+                      每天
+                    </span>
+                  )}
+                  <span className="pop-tag-red text-xs">-{penaltyPoints}积分</span>
+                </div>
+                <h4 className="break-words text-xl font-black text-pop-red">{task.title}</h4>
+
+                <div className="mt-4 rounded-pop border-4 border-pop-black bg-pop-yellow/25 p-4">
+                  <p className="mb-2 text-sm font-black text-pop-black">失败原因</p>
+                  {task.failureReason ? (
+                    <p className="whitespace-pre-wrap break-words text-sm font-bold leading-relaxed text-pop-black/75">
+                      {task.failureReason}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-bold text-pop-black/55">
+                      还没有写原因。回到任务列表展开这条失败任务，补上这次的真实原因。
+                    </p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {showAnimation && (
@@ -635,6 +793,16 @@ export function Tasks() {
         
         {/* Date picker and view mode switcher - 波普艺术风格 */}
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsReflectionMode((value) => !value)}
+            className={cn(
+              "rounded-pop border-4 border-pop-black px-4 py-2 font-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop",
+              isReflectionMode ? "bg-pop-black text-pop-yellow" : "bg-pop-red text-white"
+            )}
+          >
+            {isReflectionMode ? "返回任务" : "三省吾身"}
+          </button>
           <div className="relative">
             <button
               type="button"
@@ -674,9 +842,15 @@ export function Tasks() {
 
       {/* View Content */}
       <div className="animate-pop-in">
-        {viewMode === 'day' && renderDayView()}
-        {viewMode === 'week' && renderWeekView()}
-        {viewMode === 'month' && renderMonthView()}
+        {isReflectionMode ? (
+          renderReflectionView()
+        ) : (
+          <>
+            {viewMode === 'day' && renderDayView()}
+            {viewMode === 'week' && renderWeekView()}
+            {viewMode === 'month' && renderMonthView()}
+          </>
+        )}
       </div>
     </div>
   );
