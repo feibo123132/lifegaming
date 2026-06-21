@@ -14,9 +14,13 @@ import { cn } from '../utils/helpers';
 import { rewardCategories, rewards } from '../data/mockData';
 import { useGameStore } from '../store/useGameStore';
 import { calculateAvailablePoints } from '../lib/gameSync';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 import type { RewardCategoryId } from '../types';
 
 export function Shop() {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
   const tasks = useGameStore((state) => state.tasks);
   const redeemedIds = useGameStore((state) => state.redeemedRewardIds);
   const redeemHistory = useGameStore((state) => state.redeemHistory);
@@ -45,7 +49,7 @@ export function Shop() {
           <div className="animate-float">
             <div className="pop-card bg-pop-yellow !p-8 text-center">
               <div className="text-6xl mb-4">🎉</div>
-              <p className="text-2xl font-black text-pop-black">成功兑换</p>
+              <p className="text-2xl font-black text-pop-black">{copy.redeemSuccess}</p>
               <p className="text-xl font-bold text-pop-red">{lastRedeemed}！</p>
             </div>
           </div>
@@ -57,16 +61,16 @@ export function Shop() {
         <div>
           <h2 className="pop-title flex items-center gap-3">
             <ShoppingBag className="w-8 h-8 text-pop-orange" />
-            积分商城
+            {copy.shopTitle}
           </h2>
-          <p className="text-pop-black/70 font-bold mt-1">完成任务赚取积分，兑换专属奖励</p>
+          <p className="text-pop-black/70 font-bold mt-1">{copy.shopSubtitle}</p>
         </div>
         <div className="pop-card bg-pop-yellow !p-4 flex items-center gap-3">
           <div className="pop-icon-box bg-pop-red w-12 h-12">
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            <p className="text-xs font-bold text-pop-black/60">可用积分</p>
+            <p className="text-xs font-bold text-pop-black/60">{copy.availablePoints}</p>
             <p className="text-3xl font-black text-pop-black">{userPoints}</p>
           </div>
         </div>
@@ -141,7 +145,7 @@ export function Shop() {
                     <div className="flex items-center justify-center gap-1 mb-4">
                       <Star className="w-5 h-5 text-pop-yellow fill-pop-yellow" />
                       <span className="font-black text-xl text-pop-black">{reward.points}</span>
-                      <span className="text-sm font-bold text-pop-black/60">积分</span>
+                      <span className="text-sm font-bold text-pop-black/60">{copy.points}</span>
                     </div>
 
                     <button
@@ -159,17 +163,17 @@ export function Shop() {
                       {isRedeemed ? (
                         <>
                           <Check className="w-5 h-5" />
-                          已兑换
+                          {copy.redeemed}
                         </>
                       ) : canAfford ? (
                         <>
                           <Gift className="w-5 h-5" />
-                          立即兑换
+                          {copy.redeemNow}
                         </>
                       ) : (
                         <>
                           <Lock className="w-5 h-5" />
-                          积分不足
+                          {copy.pointsInsufficient}
                         </>
                       )}
                     </button>
@@ -187,7 +191,7 @@ export function Shop() {
           <div className="pop-icon-box bg-pop-blue w-10 h-10">
             <History className="w-5 h-5 text-white" />
           </div>
-          <h3 className="font-black text-xl text-pop-black">兑换记录</h3>
+          <h3 className="font-black text-xl text-pop-black">{copy.redeemHistory}</h3>
         </div>
         
         {redeemHistory.length > 0 ? (
@@ -209,7 +213,7 @@ export function Shop() {
             ))}
           </div>
         ) : (
-          <p className="text-pop-black/60 text-center py-8 font-bold">暂无兑换记录</p>
+          <p className="text-pop-black/60 text-center py-8 font-bold">{copy.noRedeemHistory}</p>
         )}
       </div>
 
@@ -222,9 +226,9 @@ export function Shop() {
           <div>
             <h3 className="font-black text-2xl flex items-center gap-2">
               <Flame className="w-6 h-6" />
-              积分达人
+              {copy.pointsMaster}
             </h3>
-            <p className="font-bold text-white/90">还没有累计积分。完成任务后，这里会记录你的真实进度。</p>
+            <p className="font-bold text-white/90">还没有累计{copy.points}。完成{copy.taskTitle}后，这里会记录你的真实进度。</p>
           </div>
         </div>
       </div>

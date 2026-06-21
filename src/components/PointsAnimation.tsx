@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Star, Sparkles } from 'lucide-react';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 
 interface PointsAnimationProps {
   points: number;
@@ -7,6 +9,8 @@ interface PointsAnimationProps {
 }
 
 export function PointsAnimation({ points, onComplete }: PointsAnimationProps) {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -43,7 +47,7 @@ export function PointsAnimation({ points, onComplete }: PointsAnimationProps) {
               +{points}
             </div>
             <div className="pop-tag bg-pop-red text-white text-xl font-black">
-              积分GET！
+              {copy.pointsAnimation}
             </div>
           </div>
         </div>

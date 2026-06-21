@@ -17,9 +17,13 @@ import { sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../da
 import { cn, formatDate } from '../utils/helpers';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { calculateAvailablePoints, filterTasksByDate, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
+import { calculateAvailablePoints, calculateTaskCompletionStats, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 
 export function Dashboard() {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
   const tasks = useGameStore((state) => state.tasks);
   const redeemHistory = useGameStore((state) => state.redeemHistory);
   const profileName = useGameStore((state) => state.profileName);
@@ -27,20 +31,20 @@ export function Dashboard() {
   const syncError = useGameStore((state) => state.syncError);
   const user = useAuthStore((state) => state.user);
   const todayKey = getLocalDateKey();
-  const todayTasks = filterTasksByDate(tasks, todayKey);
-  const completedTasks = todayTasks.filter(t => t.completed).length;
-  const totalTasks = todayTasks.length;
-  const taskProgress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  const todayTaskStats = calculateTaskCompletionStats(tasks, 'day', todayKey);
+  const completedTasks = todayTaskStats.completed;
+  const totalTasks = todayTaskStats.total;
+  const taskProgress = todayTaskStats.completionRate;
   const playerProgress = getPlayerProgress(tasks, todayKey);
   const userPoints = calculateAvailablePoints({ tasks, redeemHistory }, todayKey);
   const displayName = profileName || user?.email?.split('@')[0] || '新玩家';
   
   const todaySleep = sleepRecords[sleepRecords.length - 1];
   const stats = [
-    { label: '今日任务', value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
-    { label: '可用积分', value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
-    { label: '连续打卡', value: `${playerProgress.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
-    { label: '本周排名', value: '暂无', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
+    { label: copy.todayTasks, value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
+    { label: copy.availablePoints, value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
+    { label: copy.streak, value: `${playerProgress.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
+    { label: copy.weeklyRank, value: '暂无', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
   ];
 
   return (
@@ -59,7 +63,7 @@ export function Dashboard() {
         </div>
         <div className="pop-tag-yellow text-lg">
           <Flame className="w-5 h-5 mr-1 inline" />
-          连续 {playerProgress.streak} 天
+          {copy.streak} {playerProgress.streak} 天
         </div>
       </div>
 
@@ -78,13 +82,13 @@ export function Dashboard() {
             <div className="flex items-center gap-3">
               <div className="pop-tag bg-pop-black text-pop-yellow text-lg">
                 <Crown className="w-5 h-5 mr-1" />
-                当前等级
+                {copy.currentLevel}
               </div>
             </div>
             <p className="text-4xl font-black text-pop-black">Lv.{playerProgress.level} {playerProgress.levelTitle}</p>
             <div className="bg-white border-4 border-pop-black rounded-pop p-4 inline-block">
-              <p className="text-pop-black font-bold">距离下一级还需</p>
-              <p className="text-2xl font-black text-pop-red">{playerProgress.expToNextLevel} 经验值</p>
+              <p className="text-pop-black font-bold">{copy.nextLevelRemaining}</p>
+              <p className="text-2xl font-black text-pop-red">{playerProgress.expToNextLevel} {copy.experience}</p>
             </div>
           </div>
           
@@ -97,7 +101,7 @@ export function Dashboard() {
             </ProgressRing>
             <div className="mt-3 pop-tag-yellow">
               <Sparkles className="w-4 h-4 mr-1 inline" />
-              今日进度 {taskProgress.toFixed(0)}%
+              {copy.todayProgress} {taskProgress.toFixed(0)}%
             </div>
           </div>
         </div>
@@ -252,7 +256,7 @@ export function Dashboard() {
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { icon: Target, label: '查看任务', color: 'bg-pop-yellow' },
+            { icon: Target, label: `查看${copy.taskTitle}`, color: 'bg-pop-yellow' },
             { icon: Moon, label: '记录睡眠', color: 'bg-pop-purple' },
             { icon: Dumbbell, label: '记录运动', color: 'bg-pop-green' },
             { icon: Utensils, label: '记录饮食', color: 'bg-pop-orange' },

@@ -15,10 +15,14 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/helpers';
 import { sleepRecords, dietRecords, exerciseRecords, videoProjects } from '../data/mockData';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 
 type DataTab = 'sleep' | 'diet' | 'exercise' | 'video';
 
 export function DataRecord() {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
   const [activeTab, setActiveTab] = useState<DataTab>('sleep');
 
   const tabs = [
@@ -35,7 +39,7 @@ export function DataRecord() {
         <div>
           <h2 className="pop-title flex items-center gap-3">
             <Trophy className="w-8 h-8 text-pop-red" />
-            数据记录
+            {copy.dataTitle}
           </h2>
           <p className="text-pop-black/70 font-bold mt-1">记录你的生活数据，追踪健康习惯</p>
         </div>

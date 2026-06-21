@@ -7,6 +7,7 @@ import {
   calculateTaskCompletionStats,
   completeCycleChallengeDay,
   createTaskTimestampForDate,
+  createDailyTemplate,
   createUserTask,
   createInitialGameData,
   ensureDailyTemplateTasks,
@@ -356,6 +357,90 @@ test('deducts overdue incomplete task penalties from player experience', () => {
   )!;
 
   assert.equal(getPlayerProgress([completed, overdue], '2026-06-12').totalExp, 30);
+});
+
+test('creates reward-only tasks and still awards their completion points', () => {
+  const rewardOnly = createUserTask(
+    { title: 'Exercise', category: 'daily', points: 10, dateKey: '2026-06-11', rewardOnly: true },
+    'task-reward-only',
+    '2026-06-11T08:00:00.000'
+  )!;
+
+  assert.equal(rewardOnly.rewardOnly, true);
+  assert.equal(toggleUserTaskCompletion(rewardOnly, '2026-06-11T10:00:00.000').pointsDelta, 10);
+});
+
+test('does not penalize an incomplete reward-only task', () => {
+  const rewardOnly = createUserTask(
+    { title: 'Exercise', category: 'daily', points: 10, dateKey: '2026-06-11', rewardOnly: true },
+    'task-reward-only',
+    '2026-06-11T08:00:00.000'
+  )!;
+
+  assert.equal(isOverdueIncompleteTask(rewardOnly, '2026-06-12'), false);
+  assert.equal(getTaskPenaltyPoints(rewardOnly, '2026-06-12'), 0);
+  assert.equal(calculateAvailablePoints({ tasks: [rewardOnly], redeemHistory: [] }, '2026-06-12'), 0);
+  assert.equal(getPlayerProgress([rewardOnly], '2026-06-12').totalExp, 0);
+});
+
+test('excludes reward-only tasks from completion statistics', () => {
+  const required = createUserTask(
+    { title: 'Required task', category: 'main', points: 20, dateKey: '2026-06-11' },
+    'task-required',
+    '2026-06-11T08:00:00.000'
+  )!;
+  const rewardOnlyOpen = createUserTask(
+    { title: 'Optional exercise', category: 'daily', points: 10, dateKey: '2026-06-11', rewardOnly: true },
+    'task-reward-only-open',
+    '2026-06-11T08:00:00.000'
+  )!;
+  const rewardOnlyDone = toggleUserTaskCompletion(createUserTask(
+    { title: 'Optional reading', category: 'daily', points: 5, dateKey: '2026-06-11', rewardOnly: true },
+    'task-reward-only-done',
+    '2026-06-11T08:00:00.000'
+  )!).task;
+
+  assert.deepEqual(calculateTaskCompletionStats(
+    [required, rewardOnlyOpen, rewardOnlyDone],
+    'day',
+    '2026-06-11'
+  ), {
+    completed: 0,
+    total: 1,
+    completionRate: 0
+  });
+});
+
+test('excludes incomplete reward-only tasks from failure reflection', () => {
+  const rewardOnly = createUserTask(
+    { title: 'Exercise', category: 'daily', points: 10, dateKey: '2026-06-11', rewardOnly: true },
+    'task-reward-only',
+    '2026-06-11T08:00:00.000'
+  )!;
+
+  assert.deepEqual(getFailedTasksForReflection(
+    [rewardOnly],
+    'day',
+    '2026-06-11',
+    '2026-06-12'
+  ), []);
+});
+
+test('daily templates preserve reward-only behavior on generated tasks', () => {
+  const template = createDailyTemplate(
+    { title: 'Exercise', points: 10, rewardOnly: true },
+    'daily-template-reward-only',
+    '2026-06-10T08:00:00.000'
+  )!;
+  const data = {
+    ...createInitialGameData('2026-06-10T08:00:00.000'),
+    dailyTemplates: [template]
+  };
+
+  const generated = ensureDailyTemplateTasks(data, '2026-06-11', '2026-06-11T08:00:00.000');
+
+  assert.equal(template.rewardOnly, true);
+  assert.equal(filterTasksByDate(generated.tasks, '2026-06-11')[0].rewardOnly, true);
 });
 
 test('calculates task completion stats for day week and month views', () => {

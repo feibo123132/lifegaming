@@ -5,6 +5,7 @@ import {
   getErrorMessage,
   isPasswordLoginDisabledError
 } from '../lib/authErrors';
+import { rememberLoginEmail } from '../lib/defaultLoginCredentials';
 
 interface User {
   uid: string;
@@ -30,13 +31,9 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-const USER_EMAIL_STORAGE_KEY = 'design_life_user_email';
-
 const syncUserToStore = (set: (state: Partial<AuthState>) => void, loginState: any) => {
   if (loginState?.user?.email) {
-    localStorage.setItem(USER_EMAIL_STORAGE_KEY, loginState.user.email);
-  } else {
-    localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
+    rememberLoginEmail(localStorage, loginState.user.email);
   }
 
   set({
@@ -69,7 +66,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
       set({ user: null, isLoading: false });
     });
 
@@ -231,7 +227,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     try {
       await auth.signOut();
-      localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
       set({ user: null });
     } catch (err) {
       console.error('Logout failed:', err);

@@ -45,6 +45,7 @@ export interface NewTaskInput {
   saveAsDailyTemplate?: boolean;
   templateId?: string;
   challengeDays?: number;
+  rewardOnly?: boolean;
 }
 
 export interface EditTaskInput {
@@ -214,6 +215,7 @@ export const createUserTask = (
     completed: false,
     createdAt: input.dateKey ? createTaskTimestampForDate(input.dateKey, now) : now,
     ...(input.category === 'daily' && input.templateId && !challengeDays ? { templateId: input.templateId } : {}),
+    ...(input.category === 'daily' && input.rewardOnly && !challengeDays ? { rewardOnly: true } : {}),
     ...(challengeDays
       ? {
           challenge: {
@@ -227,7 +229,7 @@ export const createUserTask = (
 };
 
 export const createDailyTemplate = (
-  input: Pick<NewTaskInput, 'title' | 'points'>,
+  input: Pick<NewTaskInput, 'title' | 'points' | 'rewardOnly'>,
   id: string,
   now = new Date().toISOString()
 ): DailyTaskTemplate | null => {
@@ -239,7 +241,8 @@ export const createDailyTemplate = (
     title,
     points: Math.max(1, Math.min(999, Math.round(input.points || 1))),
     active: true,
-    createdAt: now
+    createdAt: now,
+    ...(input.rewardOnly ? { rewardOnly: true } : {})
   };
 };
 
@@ -408,7 +411,7 @@ export const getTaskAwardedPoints = (task: Task): number => {
 export const isOverdueIncompleteTask = (
   task: Task,
   today: Date | string = new Date()
-): boolean => !isCycleChallengeTask(task) && !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
+): boolean => !isCycleChallengeTask(task) && !task.rewardOnly && !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
 
 export const getTaskPenaltyPoints = (
   task: Task,
@@ -587,7 +590,7 @@ export const calculateTaskCompletionStats = (
       : getMonthDateKeys(selectedDateKey);
   const taskOccurrences = dateKeys.flatMap((dateKey) =>
     filterTasksByDate(tasks, dateKey).map((task) => ({ task, dateKey }))
-  );
+  ).filter(({ task }) => !task.rewardOnly);
   const completed = taskOccurrences.filter(({ task, dateKey }) =>
     isTaskCompletedOnDate(task, dateKey)
   ).length;
@@ -621,8 +624,8 @@ export const getFailedTasksForReflection = (
 export const isRecurringDailyTask = (task: Task): boolean =>
   task.category === 'daily' && Boolean(task.templateId);
 
-const getDailyTemplateKey = (value: Pick<DailyTaskTemplate | Task, 'title' | 'points'>): string =>
-  `${value.title.trim().toLowerCase()}::${Math.max(1, Math.round(value.points || 1))}`;
+const getDailyTemplateKey = (value: Pick<DailyTaskTemplate | Task, 'title' | 'points' | 'rewardOnly'>): string =>
+  `${value.title.trim().toLowerCase()}::${Math.max(1, Math.round(value.points || 1))}::${Boolean(value.rewardOnly)}`;
 
 const pickRecurringTaskToKeep = (current: Task, candidate: Task): Task => {
   if (candidate.completed && !current.completed) return candidate;
@@ -736,7 +739,8 @@ export const ensureDailyTemplateTasks = (
       points: template.points,
       completed: false,
       createdAt: createTaskTimestampForDate(dateKey, now),
-      templateId: template.id
+      templateId: template.id,
+      ...(template.rewardOnly ? { rewardOnly: true } : {})
     }));
 
   if (!tasksToAdd.length) {

@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Flame, KeyRound, Loader2, Lock, Mail, ShieldCheck, Sparkles, Star, Trophy } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
-import { getDefaultLoginCredentials, getInitialLoginMode } from '../lib/defaultLoginCredentials';
+import {
+  getDefaultLoginCredentials,
+  getInitialLoginMode,
+  getRememberedLoginEmail
+} from '../lib/defaultLoginCredentials';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -28,7 +32,8 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const redirectTo = (location.state as LocationState | null)?.from?.pathname || '/';
-  const defaultCredentials = getDefaultLoginCredentials(import.meta.env);
+  const rememberedEmail = getRememberedLoginEmail(window.localStorage);
+  const defaultCredentials = getDefaultLoginCredentials(import.meta.env, rememberedEmail);
   const {
     user,
     sendCode,
@@ -43,7 +48,7 @@ export const LoginPage = () => {
   const [mode, setMode] = useState<LoginMode>(() => getInitialLoginMode(defaultCredentials));
   const [email, setEmail] = useState(defaultCredentials.email);
   const [code, setCode] = useState('');
-  const [password, setPassword] = useState(defaultCredentials.password);
+  const [password, setPassword] = useState('');
   const [setupCode, setSetupCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -52,6 +57,11 @@ export const LoginPage = () => {
   const [setupCodeSent, setSetupCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [setupCountdown, setSetupCountdown] = useState(0);
+  const emailFormId = mode === 'password'
+    ? 'password-login-form'
+    : mode === 'code'
+      ? 'code-login-form'
+      : undefined;
 
   useEffect(() => {
     if (user) {
@@ -295,6 +305,9 @@ export const LoginPage = () => {
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-pop-black/55" size={20} />
               <input
                 type="email"
+                name="username"
+                autoComplete="username"
+                form={emailFormId}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                     className={inputClassName}
@@ -306,7 +319,7 @@ export const LoginPage = () => {
         )}
 
         {mode === 'code' && (
-          <form onSubmit={handleCodeLogin} className="space-y-6">
+          <form id="code-login-form" onSubmit={handleCodeLogin} className="space-y-6">
             {codeSent && (
               <div>
                     <label className="mb-2 block text-sm font-black text-pop-black">验证码</label>
@@ -363,13 +376,14 @@ export const LoginPage = () => {
         )}
 
         {mode === 'password' && (
-          <form onSubmit={handlePasswordLogin} className="space-y-6">
+          <form id="password-login-form" onSubmit={handlePasswordLogin} className="space-y-6">
             <div>
                   <label className="mb-2 block text-sm font-black text-pop-black">密码</label>
               <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-pop-black/55" size={20} />
                 <input
                   type="password"
+                  name="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                       className={inputClassName}

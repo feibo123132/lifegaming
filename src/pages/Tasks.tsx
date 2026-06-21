@@ -1,6 +1,6 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
-import { cn, CATEGORY_LABELS, getWeekDates } from '../utils/helpers';
+import { cn, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
@@ -25,11 +25,20 @@ import {
   shouldPlayTaskCompletionSound,
   shouldPlayTaskCompletionSoundBeforeToggle
 } from '../lib/taskCompletionSound';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 type TaskCategory = Exclude<CategoryFilter, 'all'>;
 
 export function Tasks() {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
+  const categoryLabels: Record<TaskCategory, string> = {
+    main: copy.mainTask,
+    side: copy.sideTask,
+    daily: copy.dailyTask
+  };
   const tasks = useGameStore((state) => state.tasks);
   const toggleSyncedTask = useGameStore((state) => state.toggleTask);
   const completeChallengeDay = useGameStore((state) => state.completeChallengeDay);
@@ -44,6 +53,7 @@ export function Tasks() {
   const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('daily');
   const [newTaskPoints, setNewTaskPoints] = useState(getDefaultTaskPoints('daily'));
   const [saveDailyTemplate, setSaveDailyTemplate] = useState(true);
+  const [isRewardOnlyEnabled, setIsRewardOnlyEnabled] = useState(false);
   const [isCycleChallengeEnabled, setIsCycleChallengeEnabled] = useState(false);
   const [challengeDays, setChallengeDays] = useState(14);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -113,7 +123,7 @@ export function Tasks() {
       (total, dateKey) => total + getCycleChallengeDayPoints(task, dateKey),
       0
     );
-    if (!window.confirm(`确认挑战失败吗？未完成部分将扣除 ${penaltyPoints} 积分和经验。`)) return;
+    if (!window.confirm(`确认挑战失败吗？未完成部分将扣除 ${penaltyPoints} ${copy.points}和${copy.experience}。`)) return;
 
     await failChallenge(task.id);
   };
@@ -126,6 +136,7 @@ export function Tasks() {
       points: newTaskPoints,
       dateKey: selectedDateKey,
       saveAsDailyTemplate: newTaskCategory === 'daily' && saveDailyTemplate && !isCycleChallengeEnabled,
+      rewardOnly: newTaskCategory === 'daily' && isRewardOnlyEnabled && !isCycleChallengeEnabled,
       challengeDays: newTaskCategory === 'daily' && isCycleChallengeEnabled
         ? Math.max(1, Math.round(challengeDays || 1))
         : undefined
@@ -149,7 +160,15 @@ export function Tasks() {
 
   const toggleCycleChallenge = (checked: boolean) => {
     setIsCycleChallengeEnabled(checked);
-    if (checked) setSaveDailyTemplate(false);
+    if (checked) {
+      setSaveDailyTemplate(false);
+      setIsRewardOnlyEnabled(false);
+    }
+  };
+
+  const toggleRewardOnly = (checked: boolean) => {
+    setIsRewardOnlyEnabled(checked);
+    if (checked) setIsCycleChallengeEnabled(false);
   };
 
   const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
@@ -203,12 +222,12 @@ export function Tasks() {
 
   const weekData = weekDates.map((date) => {
     const dateKey = getLocalDateKey(date);
-    const dayTasks = filterTasksByDate(tasks, dateKey);
+    const dayStats = calculateTaskCompletionStats(tasks, 'day', dateKey);
 
     return {
       date,
-      completed: dayTasks.filter((task) => isTaskCompletedOnDate(task, dateKey)).length,
-      total: dayTasks.length,
+      completed: dayStats.completed,
+      total: dayStats.total,
       isSelected: dateKey === selectedDateKey,
     };
   });
@@ -240,12 +259,12 @@ export function Tasks() {
       <form onSubmit={addTask} className="pop-card bg-white !p-4 mb-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex-1">
-            <label className="mb-2 block text-sm font-black text-pop-black">任务名称</label>
+            <label className="mb-2 block text-sm font-black text-pop-black">{copy.taskName}</label>
             <input
               value={newTaskTitle}
               onChange={(event) => setNewTaskTitle(event.target.value)}
               className="pop-input w-full"
-              placeholder="今天要完成什么？"
+              placeholder={copy.taskPlaceholder}
             />
           </div>
 
@@ -253,9 +272,9 @@ export function Tasks() {
             <label className="mb-2 block text-sm font-black text-pop-black">类型</label>
             <div className="grid grid-cols-3 gap-2 rounded-pop border-4 border-pop-black bg-white p-1 shadow-pop-sm">
               {([
-                { key: 'main', label: '主线' },
-                { key: 'side', label: '支线' },
-                { key: 'daily', label: '日常' }
+                { key: 'main', label: copy.mainCategory },
+                { key: 'side', label: copy.sideCategory },
+                { key: 'daily', label: copy.dailyCategory }
               ] as const).map((item) => (
                 <button
                   key={item.key}
@@ -280,7 +299,7 @@ export function Tasks() {
           </div>
 
           <div className="w-full lg:w-28">
-            <label className="mb-2 block text-sm font-black text-pop-black">积分</label>
+            <label className="mb-2 block text-sm font-black text-pop-black">{copy.points}</label>
             <input
               value={newTaskPoints}
               onChange={(event) => setNewTaskPoints(Number(event.target.value))}
@@ -297,7 +316,7 @@ export function Tasks() {
             className="pop-btn-primary flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-5 w-5" />
-            添加
+            {copy.addTask}
           </button>
         </div>
 
@@ -310,7 +329,19 @@ export function Tasks() {
                 className="h-5 w-5 accent-pop-green"
                 type="checkbox"
               />
-              <span>每天自动出现</span>
+              <span>{copy.dailyAuto}</span>
+            </label>
+            <label
+              className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-green px-4 py-2 font-black text-white shadow-pop-sm"
+              title="完成时正常加分；没完成不扣积分、不扣经验，也不影响完成率"
+            >
+              <input
+                checked={isRewardOnlyEnabled}
+                onChange={(event) => toggleRewardOnly(event.target.checked)}
+                className="h-5 w-5 accent-pop-yellow"
+                type="checkbox"
+              />
+              <span>{copy.rewardOnly}</span>
             </label>
             <label className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-white px-4 py-2 font-black text-pop-black shadow-pop-sm">
               <input
@@ -319,11 +350,11 @@ export function Tasks() {
                 className="h-5 w-5 accent-pop-red"
                 type="checkbox"
               />
-              <span>周期挑战</span>
+              <span>{copy.cycleChallenge}</span>
             </label>
             {isCycleChallengeEnabled && (
               <label className="block w-36">
-                <span className="mb-1 block text-xs font-black text-pop-black">连续天数</span>
+                <span className="mb-1 block text-xs font-black text-pop-black">{copy.consecutiveDays}</span>
                 <input
                   value={challengeDays}
                   onChange={(event) => setChallengeDays(Math.max(1, Number(event.target.value) || 1))}
@@ -342,9 +373,9 @@ export function Tasks() {
       <div className="flex gap-3 overflow-x-auto pb-2">
         {([
           { key: 'all', label: '全部', color: 'bg-pop-black text-white' },
-          { key: 'main', label: '主线', color: 'bg-pop-yellow text-pop-black' },
-          { key: 'side', label: '支线', color: 'bg-pop-blue text-white' },
-          { key: 'daily', label: '日常', color: 'bg-pop-green text-white' },
+          { key: 'main', label: copy.mainCategory, color: 'bg-pop-yellow text-pop-black' },
+          { key: 'side', label: copy.sideCategory, color: 'bg-pop-blue text-white' },
+          { key: 'daily', label: copy.dailyCategory, color: 'bg-pop-green text-white' },
         ] as const).map((cat) => (
           <button
             key={cat.key}
@@ -368,8 +399,8 @@ export function Tasks() {
             <div className="pop-icon-box mx-auto mb-4 h-16 w-16 bg-pop-yellow">
               <Target className="h-8 w-8 text-pop-black" />
             </div>
-            <p className="text-xl font-black text-pop-black">暂无任务</p>
-            <p className="mt-2 text-sm font-bold text-pop-black/60">给 {selectedDateLabel} 添加一个任务后，它会在这里出现。</p>
+            <p className="text-xl font-black text-pop-black">暂无{copy.taskTitle}</p>
+            <p className="mt-2 text-sm font-bold text-pop-black/60">给 {selectedDateLabel} {copy.addTask}一项{copy.taskTitle}后，它会在这里出现。</p>
           </div>
         )}
 
@@ -444,16 +475,21 @@ export function Tasks() {
                     task.category === 'side' && "bg-pop-blue text-white",
                     task.category === 'daily' && "bg-pop-green text-white"
                   )}>
-                    {CATEGORY_LABELS[task.category]}
+                    {categoryLabels[task.category]}
                   </span>
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
                     </span>
                   )}
+                  {task.rewardOnly && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-green px-2.5 py-0.5 text-xs font-black text-white shadow-pop-sm">
+                      {copy.rewardOnly}
+                    </span>
+                  )}
                   {isChallenge && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-blue px-2.5 py-0.5 text-xs font-black text-white shadow-pop-sm">
-                      周期挑战
+                      {copy.cycleChallenge}
                     </span>
                   )}
                   {isChallenge && task.challenge && (
@@ -464,19 +500,19 @@ export function Tasks() {
                   {isCompletedForDate && (
                     <span className="pop-tag-yellow text-xs flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
-                      +{isChallenge ? challengeDayPoints : task.points}积分
+                      +{isChallenge ? challengeDayPoints : task.points}{copy.points}
                     </span>
                   )}
                   {isChallengeFailed && (
                     <span className="pop-tag-red text-xs flex items-center gap-1">
                       <AlertTriangle className="h-3 w-3" />
-                      -{challengePenaltyPoints}积分
+                      -{challengePenaltyPoints}{copy.points}
                     </span>
                   )}
                   {isOverdue && (
                     <span className="pop-tag-red text-xs flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
-                      -{penaltyPoints}积分
+                      -{penaltyPoints}{copy.points}
                     </span>
                   )}
                 </div>
@@ -497,7 +533,7 @@ export function Tasks() {
                 )}
                 {isChallenge && task.challenge && (
                   <p className="mt-1 text-sm font-bold text-pop-black/60">
-                    第 {challengeDayNumber}/{task.challenge.targetDays} 天 · 全程 {getCycleChallengeTotalPoints(task)} 积分
+                    第 {challengeDayNumber}/{task.challenge.targetDays} 天 · 全程 {getCycleChallengeTotalPoints(task)} {copy.points}
                     {isChallengeFailed && ' · 挑战已失败'}
                     {task.challenge.status === 'completed' && ' · 挑战已完成'}
                   </p>
@@ -516,7 +552,7 @@ export function Tasks() {
                     max={999}
                     disabled={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)}
                     title={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)
-                      ? '挑战开始后不能修改初始积分'
+                      ? `${copy.cycleChallenge}开始后不能修改初始${copy.points}`
                       : undefined}
                   />
                 ) : (
@@ -525,7 +561,7 @@ export function Tasks() {
                     isCompletedForDate ? "bg-pop-green text-white" : isChallengeFailed || isOverdue ? "bg-pop-red text-white" : "bg-pop-yellow"
                   )}>
                     <Star className="w-4 h-4 mr-1 inline" />
-                    {isChallenge ? challengeDayPoints : task.points}积分
+                    {isChallenge ? challengeDayPoints : task.points}{copy.points}
                   </div>
                 )}
               </div>
@@ -699,13 +735,13 @@ export function Tasks() {
         <div className="pop-card bg-pop-green !text-white">
           <p className="text-sm font-bold text-white/80 mb-1">平均完成率</p>
           <p className="text-3xl font-black">
-            {Math.round(weekData.reduce((acc, d) => acc + (d.completed / d.total), 0) / 7 * 100)}%
+            {Math.round(weekData.reduce((acc, d) => acc + (d.total > 0 ? d.completed / d.total : 0), 0) / 7 * 100)}%
           </p>
         </div>
         <div className="pop-card bg-pop-red !text-white">
           <p className="text-sm font-bold text-white/80 mb-1">完美天数</p>
           <p className="text-3xl font-black">
-            {weekData.filter(d => d.completed === d.total).length}
+            {weekData.filter(d => d.total > 0 && d.completed === d.total).length}
           </p>
         </div>
       </div>
@@ -714,13 +750,13 @@ export function Tasks() {
       <div className="pop-card">
         <h3 className="font-black text-xl text-pop-black mb-4 flex items-center gap-2">
           <Target className="w-6 h-6 text-pop-blue" />
-          本周任务概览
+          本周{copy.taskTitle}概览
         </h3>
         <div className="space-y-3">
           {[
-            { name: '主线任务', count: tasks.filter(task => task.category === 'main').length, color: 'bg-pop-yellow', icon: Target },
-            { name: '支线任务', count: tasks.filter(task => task.category === 'side').length, color: 'bg-pop-blue', icon: TrendingUp },
-            { name: '日常任务', count: tasks.filter(task => task.category === 'daily').length, color: 'bg-pop-green', icon: Calendar },
+            { name: copy.mainTask, count: tasks.filter(task => task.category === 'main').length, color: 'bg-pop-yellow', icon: Target },
+            { name: copy.sideTask, count: tasks.filter(task => task.category === 'side').length, color: 'bg-pop-blue', icon: TrendingUp },
+            { name: copy.dailyTask, count: tasks.filter(task => task.category === 'daily').length, color: 'bg-pop-green', icon: Calendar },
           ].map((item) => {
             const Icon = item.icon;
             return (
@@ -796,12 +832,12 @@ export function Tasks() {
 
       {/* Monthly Progress */}
       <div className="pop-card">
-        <h3 className="font-black text-xl text-pop-black mb-4">任务类型分布</h3>
+        <h3 className="font-black text-xl text-pop-black mb-4">{copy.taskTitle}类型分布</h3>
         <div className="space-y-4">
           {[
-            { name: '主线任务', completed: tasks.filter(task => task.category === 'main' && task.completed).length, total: tasks.filter(task => task.category === 'main').length, color: 'bg-pop-yellow' },
-            { name: '支线任务', completed: tasks.filter(task => task.category === 'side' && task.completed).length, total: tasks.filter(task => task.category === 'side').length, color: 'bg-pop-blue' },
-            { name: '日常任务', completed: tasks.filter(task => task.category === 'daily' && task.completed).length, total: tasks.filter(task => task.category === 'daily').length, color: 'bg-pop-green' },
+            { name: copy.mainTask, completed: tasks.filter(task => task.category === 'main' && !task.rewardOnly && task.completed).length, total: tasks.filter(task => task.category === 'main' && !task.rewardOnly).length, color: 'bg-pop-yellow' },
+            { name: copy.sideTask, completed: tasks.filter(task => task.category === 'side' && !task.rewardOnly && task.completed).length, total: tasks.filter(task => task.category === 'side' && !task.rewardOnly).length, color: 'bg-pop-blue' },
+            { name: copy.dailyTask, completed: tasks.filter(task => task.category === 'daily' && !task.rewardOnly && task.completed).length, total: tasks.filter(task => task.category === 'daily' && !task.rewardOnly).length, color: 'bg-pop-green' },
           ].map((item) => (
             <div key={item.name}>
               <div className="flex justify-between text-sm font-bold mb-2">
@@ -831,7 +867,7 @@ export function Tasks() {
               三省吾身
             </h3>
             <p className="mt-1 font-bold text-pop-black/65">
-              {reflectionScopeLabel}共有 {reflectionTasks.length} 个未完成任务，挑一个坐下来好好复盘。
+              {reflectionScopeLabel}共有 {reflectionTasks.length} 个未完成{copy.taskTitle}，挑一个坐下来好好复盘。
             </p>
           </div>
           <span className="pop-tag-red text-base">面壁 {reflectionTasks.length} 项</span>
@@ -862,14 +898,14 @@ export function Tasks() {
                     task.category === 'side' && "bg-pop-blue text-white",
                     task.category === 'daily' && "bg-pop-green text-white"
                   )}>
-                    {CATEGORY_LABELS[task.category]}
+                    {categoryLabels[task.category]}
                   </span>
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
                     </span>
                   )}
-                  <span className="pop-tag-red text-xs">-{penaltyPoints}积分</span>
+                  <span className="pop-tag-red text-xs">-{penaltyPoints}{copy.points}</span>
                 </div>
                 <h4 className="break-words text-xl font-black text-pop-red">{task.title}</h4>
 
@@ -907,7 +943,7 @@ export function Tasks() {
         <div>
           <h2 className="pop-title flex items-center gap-3">
             <Target className="w-8 h-8 text-pop-red" />
-            任务
+            {copy.taskTitle}
           </h2>
           <div className="flex items-center gap-2 mt-2">
             <span className="pop-tag bg-pop-yellow">
@@ -929,7 +965,7 @@ export function Tasks() {
               isReflectionMode ? "bg-pop-black text-pop-yellow" : "bg-pop-red text-white"
             )}
           >
-            {isReflectionMode ? "返回任务" : "三省吾身"}
+            {isReflectionMode ? `返回${copy.taskTitle}` : "三省吾身"}
           </button>
           <div className="relative">
             <button

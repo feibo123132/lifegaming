@@ -19,6 +19,7 @@ export interface Task {
   templateId?: string;
   failureReason?: string;
   challenge?: CycleChallenge;
+  rewardOnly?: boolean;
 }
 
 export interface DailyTaskTemplate {
@@ -27,6 +28,7 @@ export interface DailyTaskTemplate {
   points: number;
   active: boolean;
   createdAt: string;
+  rewardOnly?: boolean;
 }
 
 export interface SleepRecord {

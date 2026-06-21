@@ -23,12 +23,14 @@ import { useGameStore } from '../store/useGameStore';
 import { calculateAvailablePoints, getPlayerProgress } from '../lib/gameSync';
 import {
   getNextThemeMode,
+  getThemeCopy,
   getThemeModeClassName,
   getThemeModeLabel,
   normalizeThemeMode,
   THEME_MODE_STORAGE_KEY,
   type ThemeMode
 } from '../lib/theme';
+import { ThemeModeProvider } from '../lib/themeContext';
 import type { TabType } from '../types';
 
 interface LayoutProps {
@@ -37,13 +39,13 @@ interface LayoutProps {
   onTabChange: (tab: TabType) => void;
 }
 
-const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
-  { id: 'dashboard', label: '首页', icon: LayoutDashboard },
-  { id: 'tasks', label: '任务', icon: ListTodo },
-  { id: 'shop', label: '积分商城', icon: ShoppingBag },
-  { id: 'data', label: '数据记录', icon: BarChart3 },
+const navItems: { id: TabType; labelKey?: 'navDashboard' | 'navTasks' | 'navShop' | 'navData' | 'navReview'; label?: string; icon: React.ElementType }[] = [
+  { id: 'dashboard', labelKey: 'navDashboard', icon: LayoutDashboard },
+  { id: 'tasks', labelKey: 'navTasks', icon: ListTodo },
+  { id: 'shop', labelKey: 'navShop', icon: ShoppingBag },
+  { id: 'data', labelKey: 'navData', icon: BarChart3 },
   { id: 'npc', label: '虾教头', icon: MessageCircle },
-  { id: 'review', label: '复盘中心', icon: PieChart },
+  { id: 'review', labelKey: 'navReview', icon: PieChart },
 ];
 
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
@@ -68,6 +70,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const displayName = profileName || fallbackName;
   const displayEmail = user?.email || '已完成个人身份认证';
   const themeLabel = getThemeModeLabel(themeMode);
+  const copy = getThemeCopy(themeMode);
 
   useEffect(() => {
     window.localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
@@ -94,6 +97,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   };
 
   return (
+    <ThemeModeProvider mode={themeMode}>
     <div className={cn("min-h-screen bg-pop-yellow", getThemeModeClassName(themeMode))}>
       {/* Mobile Header */}
       <div className="lg:hidden bg-white border-b-4 border-pop-black px-4 py-3 flex items-center justify-between sticky top-0 z-50">
@@ -212,7 +216,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               {/* EXP Bar */}
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm font-bold text-pop-black">
-                  <span>经验值</span>
+                  <span>{copy.experience}</span>
                   <span>{progress.exp}/{progress.maxExp}</span>
                 </div>
                 <div className="pop-progress h-4">
@@ -225,7 +229,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
 
               {/* Points */}
               <div className="flex items-center justify-between bg-white border-3 border-pop-black rounded-pop p-3">
-                <span className="font-bold text-pop-black">可用积分</span>
+                <span className="font-bold text-pop-black">{copy.availablePoints}</span>
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-pop-red" />
                   <span className="font-black text-xl text-pop-red">{userPoints}</span>
@@ -235,7 +239,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               {/* 连击天数 */}
               <div className="mt-3 flex items-center justify-center gap-2 bg-pop-red text-white font-bold py-2 rounded-pop border-3 border-pop-black">
                 <Flame className="w-5 h-5" />
-                <span>连续打卡 {progress.streak} 天</span>
+                <span>{copy.streak} {progress.streak} 天</span>
               </div>
             </div>
 
@@ -244,6 +248,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
+                const label = item.labelKey ? copy[item.labelKey] : item.label;
                 return (
                   <button
                     key={item.id}
@@ -264,7 +269,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                     )}>
                       <Icon className="w-5 h-5" />
                     </div>
-                    <span>{item.label}</span>
+                    <span>{label}</span>
                     {isActive && (
                       <Star className="w-5 h-5 ml-auto fill-pop-yellow" />
                     )}
@@ -310,5 +315,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
         />
       )}
     </div>
+    </ThemeModeProvider>
   );
 }

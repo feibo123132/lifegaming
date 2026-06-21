@@ -1,16 +1,20 @@
 import { Crown, Download, Share2, Star } from 'lucide-react';
 import { weeklyReports } from '../data/mockData';
+import { getThemeCopy } from '../lib/theme';
+import { useThemeMode } from '../lib/themeContext';
 
 export function Review() {
+  const themeMode = useThemeMode();
+  const copy = getThemeCopy(themeMode);
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="pop-title flex items-center gap-3">
             <Crown className="w-8 h-8 text-pop-purple" />
-            复盘中心
+            {copy.reviewTitle}
           </h2>
-          <p className="text-pop-black/70 font-bold mt-1">真实任务完成后，这里会生成你的复盘数据</p>
+          <p className="text-pop-black/70 font-bold mt-1">完成{copy.taskTitle}后，这里会生成你的复盘数据</p>
         </div>
         <div className="flex gap-3">
           <button className="pop-btn !py-2 !px-4" disabled>
