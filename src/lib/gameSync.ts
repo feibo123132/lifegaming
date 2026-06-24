@@ -251,9 +251,9 @@ export const updateUserTask = (task: Task, input: EditTaskInput): Task | null =>
   if (!title) return null;
 
   const requestedPoints = Math.max(1, Math.min(999, Math.round(input.points || 1)));
-  const points = task.challenge && (
+  const points = task.grace || (task.challenge && (
     task.challenge.completedDateKeys.length > 0 || task.challenge.status !== 'active'
-  )
+  ))
     ? task.points
     : requestedPoints;
 
@@ -418,7 +418,8 @@ export const getTaskPenaltyPoints = (
   today: Date | string = new Date()
 ): number => {
   if (!isOverdueIncompleteTask(task, today)) return 0;
-  return Math.max(0, Math.round(task.points || 0)) * 3;
+  const penaltyBasis = task.grace?.originalPoints ?? task.points;
+  return Math.max(0, Math.round(penaltyBasis || 0)) * 3;
 };
 
 const getOverdueTaskPenaltyPoints = (
@@ -623,6 +624,67 @@ export const getFailedTasksForReflection = (
 
 export const isRecurringDailyTask = (task: Task): boolean =>
   task.category === 'daily' && Boolean(task.templateId);
+
+export const getRecurringDailyTaskProgress = (
+  tasks: Task[],
+  recurringTask: Task,
+  today: Date | string = new Date()
+): Pick<TaskCompletionStats, 'completed' | 'total'> => {
+  if (!isRecurringDailyTask(recurringTask)) {
+    return { completed: 0, total: 0 };
+  }
+
+  const todayDateKey = getLocalDateKey(today);
+  const settledTasks = tasks.filter((task) => {
+    if (!isRecurringDailyTask(task) || task.templateId !== recurringTask.templateId) return false;
+
+    const taskDateKey = getTaskDateKey(task);
+    return taskDateKey < todayDateKey || (taskDateKey === todayDateKey && task.completed);
+  });
+
+  return {
+    completed: settledTasks.filter((task) => task.completed).length,
+    total: settledTasks.length
+  };
+};
+
+export const TASK_GRACE_REWARD_COST = 10;
+
+export const canGraceTaskOneDay = (
+  task: Task,
+  selectedDateKey: string,
+  today: Date | string = new Date()
+): boolean => (
+  !task.completed &&
+  !task.grace &&
+  !task.rewardOnly &&
+  !task.templateId &&
+  !isCycleChallengeTask(task) &&
+  getTaskDateKey(task) === selectedDateKey &&
+  selectedDateKey === getLocalDateKey(today)
+);
+
+export const graceUserTaskOneDay = (
+  task: Task,
+  selectedDateKey: string,
+  now = new Date().toISOString()
+): Task => {
+  if (!canGraceTaskOneDay(task, selectedDateKey, now)) return task;
+
+  const originalPoints = Math.max(0, Math.round(task.points || 0));
+  const tomorrowDateKey = shiftDateKey(selectedDateKey, 1);
+
+  return {
+    ...task,
+    points: Math.max(0, originalPoints - TASK_GRACE_REWARD_COST),
+    createdAt: createTaskTimestampForDate(tomorrowDateKey, now),
+    grace: {
+      originalPoints,
+      fromDateKey: selectedDateKey,
+      grantedAt: now
+    }
+  };
+};
 
 const getDailyTemplateKey = (value: Pick<DailyTaskTemplate | Task, 'title' | 'points' | 'rewardOnly'>): string =>
   `${value.title.trim().toLowerCase()}::${Math.max(1, Math.round(value.points || 1))}::${Boolean(value.rewardOnly)}`;

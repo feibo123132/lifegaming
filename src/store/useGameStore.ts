@@ -10,6 +10,7 @@ import {
   createInitialGameData,
   ensureDailyTemplateTasks,
   failCycleChallenge,
+  graceUserTaskOneDay,
   getCloudSyncErrorMessage,
   mergeGameData,
   normalizeUserEmail,
@@ -44,6 +45,7 @@ interface GameStoreState extends GameData {
   setTaskFailureReason: (taskId: string, reason: string) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<boolean>;
   toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
+  graceTaskOneDay: (taskId: string, dateKey: string) => Promise<boolean>;
   completeChallengeDay: (taskId: string, dateKey: string) => Promise<{ awardedPoints: number }>;
   failChallenge: (taskId: string) => Promise<{ penaltyPoints: number }>;
   redeemReward: (rewardId: string, rewardName: string, points: number) => Promise<boolean>;
@@ -303,6 +305,28 @@ export const useGameStore = create<GameStoreState>()(
         });
         await get().syncToCloud();
         return { awardedPoints };
+      },
+
+      graceTaskOneDay: async (taskId, dateKey) => {
+        const task = get().tasks.find((item) => item.id === taskId);
+        if (!task) return false;
+
+        const gracedTask = graceUserTaskOneDay(task, dateKey);
+        if (gracedTask === task) return false;
+
+        set((state) => {
+          const nextTasks = state.tasks.map((item) => item.id === taskId ? gracedTask : item);
+
+          return withUpdatedAt({
+            tasks: nextTasks,
+            userPoints: calculateAvailablePoints({
+              tasks: nextTasks,
+              redeemHistory: state.redeemHistory
+            })
+          });
+        });
+        await get().syncToCloud();
+        return true;
       },
 
       completeChallengeDay: async (taskId, dateKey) => {

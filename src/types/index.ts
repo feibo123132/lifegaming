@@ -7,6 +7,12 @@ export interface CycleChallenge {
   failedAt?: string;
 }
 
+export interface TaskGrace {
+  originalPoints: number;
+  fromDateKey: string;
+  grantedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -20,6 +26,7 @@ export interface Task {
   failureReason?: string;
   challenge?: CycleChallenge;
   rewardOnly?: boolean;
+  grace?: TaskGrace;
 }
 
 export interface DailyTaskTemplate {

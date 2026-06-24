@@ -1,10 +1,12 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Calendar, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
+import { AlertTriangle, Check, Calendar, Clock, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, getWeekDates } from '../utils/helpers';
 import type { ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
 import {
+  TASK_GRACE_REWARD_COST,
+  canGraceTaskOneDay,
   calculateTaskCompletionStats,
   filterTasksByDate,
   getCycleChallengeDayPoints,
@@ -13,11 +15,13 @@ import {
   getDefaultTaskPoints,
   getFailedTasksForReflection,
   getLocalDateKey,
+  getRecurringDailyTaskProgress,
   getTaskPenaltyPoints,
   isCycleChallengeTask,
   isOverdueIncompleteTask,
   isRecurringDailyTask,
   isTaskCompletedOnDate,
+  shiftDateKey,
   sortTasksForDisplay
 } from '../lib/gameSync';
 import {
@@ -41,6 +45,7 @@ export function Tasks() {
   };
   const tasks = useGameStore((state) => state.tasks);
   const toggleSyncedTask = useGameStore((state) => state.toggleTask);
+  const graceTaskOneDay = useGameStore((state) => state.graceTaskOneDay);
   const completeChallengeDay = useGameStore((state) => state.completeChallengeDay);
   const failChallenge = useGameStore((state) => state.failChallenge);
   const addSyncedTask = useGameStore((state) => state.addTask);
@@ -174,6 +179,29 @@ export function Tasks() {
   const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
     event.stopPropagation();
     await deleteSyncedTask(taskId);
+  };
+
+  const confirmTaskGrace = async (
+    event: MouseEvent<HTMLButtonElement>,
+    task: (typeof tasks)[number]
+  ) => {
+    event.stopPropagation();
+    const tomorrowDateKey = shiftDateKey(selectedDateKey, 1);
+    const tomorrowLabel = new Date(`${tomorrowDateKey}T00:00:00`).toLocaleDateString('zh-CN', {
+      month: 'long',
+      day: 'numeric'
+    });
+    const reducedPoints = Math.max(0, task.points - TASK_GRACE_REWARD_COST);
+    const failurePenalty = task.points * 3;
+    const confirmed = window.confirm(
+      `${copy.graceOneDay}到${tomorrowLabel}？\n` +
+      `奖励：${task.points} → ${reducedPoints} ${copy.points}/${copy.experience}\n` +
+      `若仍未完成：扣除 ${failurePenalty} ${copy.points}和${failurePenalty} ${copy.experience}\n` +
+      '每项任务只能宽限一次，确认后不能撤销。'
+    );
+    if (!confirmed) return;
+
+    await graceTaskOneDay(task.id, selectedDateKey);
   };
 
   const startEditingTask = (event: MouseEvent<HTMLButtonElement>, task: (typeof tasks)[number]) => {
@@ -418,6 +446,10 @@ export function Tasks() {
           const challengePenaltyPoints = getCycleChallengePenaltyPoints(task);
           const isOverdue = isOverdueIncompleteTask(task);
           const penaltyPoints = getTaskPenaltyPoints(task);
+          const canUseGrace = canGraceTaskOneDay(task, selectedDateKey);
+          const recurringDailyProgress = isRecurringDailyTask(task)
+            ? getRecurringDailyTaskProgress(tasks, task)
+            : null;
           const failureReasonDraft = failureReasonDrafts[task.id] ?? task.failureReason ?? '';
           const isFailureReasonExpanded = Boolean(expandedFailureReasonIds[task.id]);
 
@@ -482,9 +514,19 @@ export function Tasks() {
                       每天
                     </span>
                   )}
+                  {recurringDailyProgress && (
+                    <span className="pop-tag-yellow text-xs">
+                      {recurringDailyProgress.completed}/{recurringDailyProgress.total}
+                    </span>
+                  )}
                   {task.rewardOnly && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-green px-2.5 py-0.5 text-xs font-black text-white shadow-pop-sm">
                       {copy.rewardOnly}
+                    </span>
+                  )}
+                  {task.grace && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-orange px-2.5 py-0.5 text-xs font-black text-white shadow-pop-sm">
+                      {copy.gracedOnce}
                     </span>
                   )}
                   {isChallenge && (
@@ -550,10 +592,12 @@ export function Tasks() {
                     type="number"
                     min={1}
                     max={999}
-                    disabled={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)}
-                    title={isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)
-                      ? `${copy.cycleChallenge}开始后不能修改初始${copy.points}`
-                      : undefined}
+                    disabled={Boolean(task.grace) || (isChallenge && (challengeCompletedDays > 0 || !isChallengeActive))}
+                    title={task.grace
+                      ? `${copy.gracedOnce}，不能修改${copy.points}`
+                      : isChallenge && (challengeCompletedDays > 0 || !isChallengeActive)
+                        ? `${copy.cycleChallenge}开始后不能修改初始${copy.points}`
+                        : undefined}
                   />
                 ) : (
                   <div className={cn(
@@ -599,6 +643,17 @@ export function Tasks() {
                       title="挑战失败"
                     >
                       <AlertTriangle className="h-5 w-5" />
+                    </button>
+                  )}
+                  {canUseGrace && (
+                    <button
+                      type="button"
+                      onClick={(event) => void confirmTaskGrace(event, task)}
+                      className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-pop-orange text-white shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+                      aria-label={`${copy.graceOneDay}：${task.title}`}
+                      title={`${copy.graceOneDay}：奖励减少${TASK_GRACE_REWARD_COST}，失败仍按原${copy.points}×3扣除`}
+                    >
+                      <Clock className="h-5 w-5" />
                     </button>
                   )}
                   <button

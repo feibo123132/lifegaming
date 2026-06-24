@@ -22,6 +22,7 @@ import {
   getLevelTitle,
   getLocalDateKey,
   getPlayerProgress,
+  getRecurringDailyTaskProgress,
   getTaskAwardedPoints,
   getTaskPenaltyPoints,
   getFailedTasksForReflection,
@@ -710,6 +711,74 @@ test('marks only template-generated daily tasks as recurring daily tasks', () =>
   assert.equal(isRecurringDailyTask(normalDaily), false);
   assert.equal(isRecurringDailyTask(recurringDaily), true);
   assert.equal(isRecurringDailyTask(recurringMain), false);
+});
+
+test('counts settled recurring daily progress without counting an unfinished current day', () => {
+  const templateId = 'daily-template-douyin';
+  const settledTasks = Array.from({ length: 13 }, (_, index) => {
+    const dateKey = shiftDateKey('2026-06-09', index);
+    const completed = ![2, 7].includes(index);
+
+    return {
+      ...createUserTask(
+        { title: '抖音：中午、晚睡前各一次', category: 'daily', points: 10, dateKey },
+        `task-${dateKey}-${templateId}`,
+        `${dateKey}T08:00:00.000`
+      )!,
+      templateId,
+      completed,
+      ...(completed ? { completedAt: new Date(`${dateKey}T09:00:00.000`) } : {})
+    };
+  });
+  const todayTask = {
+    ...createUserTask(
+      { title: '抖音：中午、晚睡前各一次', category: 'daily', points: 10, dateKey: '2026-06-22' },
+      `task-2026-06-22-${templateId}`,
+      '2026-06-22T08:00:00.000'
+    )!,
+    templateId
+  };
+  const futureTask = {
+    ...createUserTask(
+      { title: '抖音：中午、晚睡前各一次', category: 'daily', points: 10, dateKey: '2026-06-23' },
+      `task-2026-06-23-${templateId}`,
+      '2026-06-23T08:00:00.000'
+    )!,
+    templateId,
+    completed: true,
+    completedAt: new Date('2026-06-23T09:00:00.000')
+  };
+  const otherTemplateTask = {
+    ...createUserTask(
+      { title: '效率看板', category: 'daily', points: 5, dateKey: '2026-06-21' },
+      'task-2026-06-21-other-template',
+      '2026-06-21T08:00:00.000'
+    )!,
+    templateId: 'other-template',
+    completed: true,
+    completedAt: new Date('2026-06-21T09:00:00.000')
+  };
+  const tasks = [...settledTasks, todayTask, futureTask, otherTemplateTask];
+
+  assert.deepEqual(
+    getRecurringDailyTaskProgress(tasks, todayTask, '2026-06-22T10:00:00.000'),
+    { completed: 11, total: 13 }
+  );
+
+  const completedTodayTask = {
+    ...todayTask,
+    completed: true,
+    completedAt: new Date('2026-06-22T11:00:00.000')
+  };
+
+  assert.deepEqual(
+    getRecurringDailyTaskProgress(
+      [...settledTasks, completedTodayTask, futureTask, otherTemplateTask],
+      completedTodayTask,
+      '2026-06-22T12:00:00.000'
+    ),
+    { completed: 12, total: 14 }
+  );
 });
 
 test('shifts a selected date key by whole days', () => {

@@ -15,6 +15,13 @@ test('labels reward-only tasks in both themes', () => {
   assert.equal(getThemeCopy('cultivation').rewardOnly, '有赏无罚');
 });
 
+test('labels one-day grace actions and used status in both themes', () => {
+  assert.equal(getThemeCopy('pop').graceOneDay, '宽限1天');
+  assert.equal(getThemeCopy('pop').gracedOnce, '已宽限一次');
+  assert.equal(getThemeCopy('cultivation').graceOneDay, '缓期一日');
+  assert.equal(getThemeCopy('cultivation').gracedOnce, '已缓期一次');
+});
+
 test('uses pop as the default theme mode', () => {
   assert.equal(DEFAULT_THEME_MODE, 'pop');
   assert.equal(normalizeThemeMode(null), 'pop');
