@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { 
   Target, 
   TrendingUp, 
@@ -10,20 +11,25 @@ import {
   Star,
   Flame,
   Sparkles,
-  Crown
+  Crown,
+  Shield,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { ProgressRing } from '../components/ProgressRing';
 import { sleepRecords, exerciseRecords, dietRecords, videoProjects } from '../data/mockData';
-import { cn, formatDate } from '../utils/helpers';
+import { cn, formatDate, getWeekDates } from '../utils/helpers';
 import { useGameStore } from '../store/useGameStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { calculateAvailablePoints, calculateTaskCompletionStats, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
+import { calculateAvailablePoints, calculateBreakthroughStats, calculateTaskCompletionStats, getLocalDateKey, getPlayerProgress } from '../lib/gameSync';
 import { getThemeCopy } from '../lib/theme';
 import { useThemeMode } from '../lib/themeContext';
 
 export function Dashboard() {
   const themeMode = useThemeMode();
   const copy = getThemeCopy(themeMode);
+  const [isBreakthroughOpen, setIsBreakthroughOpen] = useState(false);
+  const [breakthroughMessage, setBreakthroughMessage] = useState('');
   const tasks = useGameStore((state) => state.tasks);
   const redeemHistory = useGameStore((state) => state.redeemHistory);
   const profileName = useGameStore((state) => state.profileName);
@@ -31,21 +37,38 @@ export function Dashboard() {
   const syncError = useGameStore((state) => state.syncError);
   const user = useAuthStore((state) => state.user);
   const todayKey = getLocalDateKey();
+  const breakthroughWeekKey = getLocalDateKey(getWeekDates(new Date())[0]);
+  const [breakthroughAttemptWeekKey, setBreakthroughAttemptWeekKey] = useState(() =>
+    typeof window === 'undefined' ? '' : window.localStorage.getItem('lifegaming-breakthrough-week') ?? ''
+  );
   const todayTaskStats = calculateTaskCompletionStats(tasks, 'day', todayKey);
   const completedTasks = todayTaskStats.completed;
   const totalTasks = todayTaskStats.total;
   const taskProgress = todayTaskStats.completionRate;
   const playerProgress = getPlayerProgress(tasks, todayKey);
+  const breakthroughStats = calculateBreakthroughStats(tasks, playerProgress.level, todayKey);
+  const isAtBreakthroughBottleneck = playerProgress.level % 10 === 0;
+  const isBreakthroughAttemptUsed = breakthroughAttemptWeekKey === breakthroughWeekKey;
   const userPoints = calculateAvailablePoints({ tasks, redeemHistory }, todayKey);
+  const todaySleep = sleepRecords[sleepRecords.length - 1];
   const displayName = profileName || user?.email?.split('@')[0] || '新玩家';
   
-  const todaySleep = sleepRecords[sleepRecords.length - 1];
   const stats = [
     { label: copy.todayTasks, value: `${completedTasks}/${totalTasks}`, icon: Target, color: 'bg-pop-blue', iconColor: 'text-white' },
     { label: copy.availablePoints, value: userPoints.toString(), icon: Zap, color: 'bg-pop-yellow', iconColor: 'text-pop-black' },
     { label: copy.streak, value: `${playerProgress.streak}天`, icon: TrendingUp, color: 'bg-pop-green', iconColor: 'text-white' },
     { label: copy.weeklyRank, value: '暂无', icon: Award, color: 'bg-pop-purple', iconColor: 'text-white' },
   ];
+
+  const tryBreakthrough = () => {
+    if (isBreakthroughAttemptUsed) return;
+    const succeeded = Math.random() * 100 < breakthroughStats.finalSuccessRate;
+    setBreakthroughMessage(succeeded ? '破境成功，灵台清明！' : '道心不稳，下周再战');
+    setBreakthroughAttemptWeekKey(breakthroughWeekKey);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('lifegaming-breakthrough-week', breakthroughWeekKey);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -108,8 +131,8 @@ export function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => {
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {stats.slice(0, 3).map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div 
@@ -126,8 +149,42 @@ export function Dashboard() {
         })}
       </div>
 
+      {/* Breakthrough */}
+      <button
+        type="button"
+        onClick={() => {
+          setBreakthroughMessage('');
+          setIsBreakthroughOpen(true);
+        }}
+        className="pop-card w-full bg-white p-6 text-left transition-all hover:-translate-x-1 hover:-translate-y-1 hover:shadow-pop"
+      >
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="pop-icon-box bg-pop-purple">
+              <Shield className="h-7 w-7 text-white" />
+            </div>
+            <div>
+              <p className="text-3xl font-black text-pop-black">境界突破</p>
+              <p className="mt-1 text-sm font-bold text-pop-black/60">
+                {breakthroughStats.currentRealm} → {breakthroughStats.nextRealm}
+              </p>
+              <p className="mt-3 text-base font-black text-pop-black">
+                成功率 {breakthroughStats.finalSuccessRate}%
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <span className="pop-tag-red text-sm">未完成 {breakthroughStats.failedTaskCount} 次</span>
+            <span className="pop-tag-yellow text-sm">根基 +{(breakthroughStats.routineCompletionCount * 0.5).toFixed(1)}%</span>
+            <span className={cn("pop-tag text-sm", isAtBreakthroughBottleneck ? "bg-pop-green text-white" : "bg-white text-pop-black")}>
+              {isAtBreakthroughBottleneck ? '可突破' : '未到瓶颈'}
+            </span>
+          </div>
+        </div>
+      </button>
+
       {/* Health Overview */}
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="hidden grid lg:grid-cols-3 gap-4">
         {/* Sleep */}
         <div className="pop-card p-5">
           <div className="flex items-center gap-3 mb-4">
@@ -202,7 +259,7 @@ export function Dashboard() {
       </div>
 
       {/* Video Progress */}
-      <div className="pop-card p-5">
+      <div className="hidden pop-card p-5">
         <div className="flex items-center gap-3 mb-4">
           <div className="pop-icon-box bg-pop-red">
             <Video className="w-6 h-6 text-white" />
@@ -249,7 +306,7 @@ export function Dashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="pop-card bg-pop-blue p-5">
+      <div className="hidden pop-card bg-pop-blue p-5">
         <h3 className="font-black text-xl text-white mb-4 flex items-center gap-2">
           <Sparkles className="w-6 h-6" />
           快速行动
@@ -276,6 +333,70 @@ export function Dashboard() {
           })}
         </div>
       </div>
+
+      {isBreakthroughOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-pop-black/50 p-4">
+          <div className="pop-card w-full max-w-2xl bg-white p-6">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-3xl font-black text-pop-black">境界突破规则</p>
+                <p className="mt-1 font-bold text-pop-black/60">
+                  {breakthroughStats.currentRealm} → {breakthroughStats.nextRealm}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBreakthroughOpen(false)}
+                className="rounded-pop border-4 border-pop-black bg-white p-2 text-pop-black shadow-pop-sm"
+                aria-label="关闭境界突破规则"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-pop border-4 border-pop-black bg-pop-yellow/30 p-4">
+                <p className="font-black text-pop-black">基础成功率</p>
+                <p className="text-2xl font-black text-pop-black">{breakthroughStats.baseSuccessRate}%</p>
+              </div>
+              <div className="rounded-pop border-4 border-pop-black bg-pop-red/10 p-4">
+                <p className="font-black text-pop-black">未完成任务</p>
+                <p className="text-2xl font-black text-pop-red">-{breakthroughStats.failedTaskCount}%</p>
+              </div>
+              <div className="rounded-pop border-4 border-pop-black bg-pop-green/15 p-4">
+                <p className="font-black text-pop-black">周期/周常达标</p>
+                <p className="text-2xl font-black text-pop-green">+{(breakthroughStats.routineCompletionCount * 0.5).toFixed(1)}%</p>
+              </div>
+              <div className="rounded-pop border-4 border-pop-black bg-pop-purple/15 p-4">
+                <p className="font-black text-pop-black">最终成功率</p>
+                <p className="text-2xl font-black text-pop-purple">{breakthroughStats.finalSuccessRate}%</p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-pop border-4 border-pop-black bg-white p-4">
+              <p className="flex items-center gap-2 font-black text-pop-black">
+                <AlertTriangle className="h-5 w-5 text-pop-red" />
+                每周只有 1 次境界突破机会；本境界积累只对本境界生效。
+              </p>
+            </div>
+
+            {breakthroughMessage && (
+              <div className="mt-4 rounded-pop border-4 border-pop-black bg-pop-yellow p-4 text-center text-xl font-black text-pop-black">
+                {breakthroughMessage}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={tryBreakthrough}
+              disabled={isBreakthroughAttemptUsed}
+              className="pop-btn-primary mt-5 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isBreakthroughAttemptUsed ? '本周机会已用' : '开始突破'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

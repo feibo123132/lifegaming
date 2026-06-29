@@ -1,4 +1,5 @@
 export type CycleChallengeStatus = 'active' | 'completed' | 'failed';
+export type RoutineFrequency = 'daily' | 'weekly' | 'monthly';
 
 export interface CycleChallenge {
   targetDays: number;
@@ -23,6 +24,10 @@ export interface Task {
   completedPoints?: number;
   completedAt?: Date;
   templateId?: string;
+  routine?: RoutineFrequency;
+  routineTargetCount?: number;
+  routineCompletions?: Record<string, string[]>;
+  routineAwardedPeriodKeys?: string[];
   failureReason?: string;
   challenge?: CycleChallenge;
   rewardOnly?: boolean;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildCloudGameState,
   calculateAvailablePoints,
+  calculateBreakthroughStats,
   calculateTaskCompletionStats,
   completeCycleChallengeDay,
   createTaskTimestampForDate,
@@ -23,6 +24,7 @@ import {
   getLocalDateKey,
   getPlayerProgress,
   getRecurringDailyTaskProgress,
+  getRoutineTaskProgress,
   getTaskAwardedPoints,
   getTaskPenaltyPoints,
   getFailedTasksForReflection,
@@ -317,7 +319,7 @@ test('marks only past-day incomplete tasks as overdue', () => {
 test('deducts triple task points from available points for overdue incomplete tasks', () => {
   const completed = toggleUserTaskCompletion(
     createUserTask(
-      { title: '赚取积分', category: 'main', points: 100, dateKey: '2026-06-11' },
+      { title: '赚取元宝', category: 'main', points: 100, dateKey: '2026-06-11' },
       'task-completed',
       '2026-06-11T08:00:00.000'
     )!,
@@ -831,6 +833,32 @@ test('uses increasing exp requirements for each level', () => {
   assert.equal(getLevelExpRequirement(10), 190);
 });
 
+test('calculates breakthrough chance from failures and routine completions', () => {
+  const failed = createUserTask(
+    { title: 'Failed daily', category: 'daily', points: 10, dateKey: '2026-06-09' },
+    'task-failed',
+    '2026-06-09T08:00:00.000'
+  )!;
+  const weekly = {
+    ...createUserTask(
+      { title: 'Weekly routine', category: 'daily', routine: 'weekly', routineTargetCount: 2, points: 10, dateKey: '2026-06-09' },
+      'task-weekly',
+      '2026-06-09T08:00:00.000'
+    )!,
+    routineAwardedPeriodKeys: ['2026-06-08', '2026-06-15']
+  };
+
+  assert.deepEqual(calculateBreakthroughStats([failed, weekly], 10, '2026-06-29'), {
+    currentRealm: '炼气期',
+    nextRealm: '筑基期',
+    baseSuccessRate: 70,
+    failedTaskCount: 1,
+    routineCompletionCount: 2,
+    finalSuccessRate: 70,
+    weeklyAttemptAvailable: true
+  });
+});
+
 test('carries total exp across increasing level thresholds', () => {
   const task = {
     ...createUserTask(
@@ -877,7 +905,7 @@ test('adds minor cultivation stages within each ten-level band', () => {
   assert.equal(getLevelTitle(30), '结丹期大圆满');
 });
 
-test('keeps a streak alive when the latest completion was yesterday', () => {
+test('counts cultivation days through today when the latest completion was yesterday', () => {
   const twoDaysAgo = {
     ...createUserTask(
       { title: '前天任务', category: 'daily', points: 10 },
@@ -897,7 +925,30 @@ test('keeps a streak alive when the latest completion was yesterday', () => {
     completedAt: '2026-06-09T09:00:00.000' as unknown as Date
   };
 
-  assert.equal(getPlayerProgress([twoDaysAgo, yesterday], '2026-06-10').streak, 2);
+  assert.equal(getPlayerProgress([twoDaysAgo, yesterday], '2026-06-10').streak, 3);
+});
+
+test('counts cultivation days from the first completed task date', () => {
+  const firstCompleted = {
+    ...createUserTask(
+      { title: 'First step', category: 'daily', points: 10 },
+      'task-first-step',
+      '2026-06-01T08:00:00.000'
+    )!,
+    completed: true,
+    completedAt: '2026-06-01T09:00:00.000' as unknown as Date
+  };
+  const laterCompleted = {
+    ...createUserTask(
+      { title: 'Later step', category: 'daily', points: 10 },
+      'task-later-step',
+      '2026-06-10T08:00:00.000'
+    )!,
+    completed: true,
+    completedAt: '2026-06-10T09:00:00.000' as unknown as Date
+  };
+
+  assert.equal(getPlayerProgress([firstCompleted, laterCompleted], '2026-06-12').streak, 12);
 });
 
 test('does not create a task with a blank title', () => {
@@ -992,6 +1043,55 @@ test('sorts tasks by category priority and then newest creation time', () => {
     sortTasksForDisplay([dailyNew, mainOld, sideNew, mainNew]).map((task) => task.title),
     ['新主线', '旧主线', '新支线', '新日常']
   );
+});
+
+test('keeps routine frequency for daily-category tasks', () => {
+  const weekly = createUserTask(
+    { title: 'Weekly review', category: 'daily', routine: 'weekly', points: 10 },
+    'task-weekly',
+    '2026-06-09T01:00:00.000Z'
+  );
+  const daily = createUserTask(
+    { title: 'Daily review', category: 'daily', routine: 'daily', points: 10 },
+    'task-daily',
+    '2026-06-09T01:00:00.000Z'
+  );
+
+  assert.equal(weekly?.routine, 'weekly');
+  assert.equal(daily?.routine, undefined);
+});
+
+test('completes a weekly routine when its target count is reached in the selected week', () => {
+  const base = createUserTask(
+    { title: 'Gym', category: 'daily', routine: 'weekly', routineTargetCount: 4, points: 10, dateKey: '2026-06-09' },
+    'task-weekly-gym',
+    '2026-06-09T01:00:00.000Z'
+  );
+  assert.ok(base);
+
+  let task = base;
+  for (const dateKey of ['2026-06-09', '2026-06-10', '2026-06-11']) {
+    const result = toggleUserTaskCompletion(task, `${dateKey}T08:00:00.000`);
+    task = result.task;
+    assert.equal(result.pointsDelta, 0);
+  }
+
+  assert.deepEqual(getRoutineTaskProgress(task, '2026-06-11'), { completed: 3, total: 4 });
+  assert.equal(isTaskCompletedOnDate(task, '2026-06-11'), false);
+
+  const completed = toggleUserTaskCompletion(task, '2026-06-12T08:00:00.000');
+  task = completed.task;
+  assert.equal(completed.pointsDelta, 10);
+  assert.deepEqual(getRoutineTaskProgress(task, '2026-06-12'), { completed: 4, total: 4 });
+  assert.equal(isTaskCompletedOnDate(task, '2026-06-12'), true);
+  assert.deepEqual(calculateTaskCompletionStats([task], 'week', '2026-06-11'), {
+    completed: 1,
+    total: 1,
+    completionRate: 100
+  });
+
+  assert.deepEqual(getRoutineTaskProgress(task, '2026-06-16'), { completed: 0, total: 4 });
+  assert.equal(isTaskCompletedOnDate(task, '2026-06-16'), false);
 });
 
 test('awards points when a task is completed', () => {

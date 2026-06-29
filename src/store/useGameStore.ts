@@ -44,7 +44,7 @@ interface GameStoreState extends GameData {
   editTask: (taskId: string, input: EditTaskInput) => Promise<boolean>;
   setTaskFailureReason: (taskId: string, reason: string) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<boolean>;
-  toggleTask: (taskId: string) => Promise<{ awardedPoints: number }>;
+  toggleTask: (taskId: string, dateKey?: string) => Promise<{ awardedPoints: number }>;
   graceTaskOneDay: (taskId: string, dateKey: string) => Promise<boolean>;
   completeChallengeDay: (taskId: string, dateKey: string) => Promise<{ awardedPoints: number }>;
   failChallenge: (taskId: string) => Promise<{ penaltyPoints: number }>;
@@ -285,12 +285,12 @@ export const useGameStore = create<GameStoreState>()(
         return true;
       },
 
-      toggleTask: async (taskId) => {
+      toggleTask: async (taskId, dateKey) => {
         let awardedPoints = 0;
         set((state) => {
           const nextTasks = state.tasks.map((task) => {
             if (task.id !== taskId) return task;
-            const result = toggleUserTaskCompletion(task);
+            const result = toggleUserTaskCompletion(task, dateKey ?? new Date().toISOString());
             awardedPoints = result.pointsDelta;
             return result.task;
           });

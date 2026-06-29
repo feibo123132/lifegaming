@@ -25,7 +25,7 @@ export const exerciseRecords: ExerciseRecord[] = [];
 // 视频项目
 export const videoProjects: VideoProject[] = [];
 
-// 积分商城
+// 元宝商城
 export const rewardCategories: RewardCategory[] = [
   {
     id: 'delight',

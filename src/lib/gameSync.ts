@@ -1,5 +1,5 @@
 import { currentUser, initialTasks, rewards } from '../data/mockData.ts';
-import type { DailyTaskTemplate, Task, ViewMode } from '../types/index.ts';
+import type { DailyTaskTemplate, RoutineFrequency, Task, ViewMode } from '../types/index.ts';
 
 export interface SyncedNpcMessage {
   id: string;
@@ -44,6 +44,8 @@ export interface NewTaskInput {
   dateKey?: string;
   saveAsDailyTemplate?: boolean;
   templateId?: string;
+  routine?: RoutineFrequency;
+  routineTargetCount?: number;
   challengeDays?: number;
   rewardOnly?: boolean;
 }
@@ -61,6 +63,16 @@ export interface PlayerProgress {
   expToNextLevel: number;
   levelTitle: string;
   streak: number;
+}
+
+export interface BreakthroughStats {
+  currentRealm: string;
+  nextRealm: string;
+  baseSuccessRate: number;
+  failedTaskCount: number;
+  routineCompletionCount: number;
+  finalSuccessRate: number;
+  weeklyAttemptAvailable: boolean;
 }
 
 export interface TaskCompletionStats {
@@ -123,6 +135,42 @@ export const getLevelTitle = (level: number): string => {
         : '大圆满';
 
   return `${CULTIVATION_REALMS[realmIndex]}${minorStage}`;
+};
+
+const getRealmName = (level: number): string => {
+  const normalizedLevel = Math.max(1, Math.floor(level));
+  const realmIndex = Math.min(Math.floor((normalizedLevel - 1) / 10), CULTIVATION_REALMS.length - 1);
+  return CULTIVATION_REALMS[realmIndex];
+};
+
+const BREAKTHROUGH_BASE_SUCCESS_RATES = [70, 55, 40, 32, 25, 20, 16, 12, 10, 8];
+
+export const calculateBreakthroughStats = (
+  tasks: Task[],
+  level: number,
+  today: Date | string = new Date()
+): BreakthroughStats => {
+  const realmIndex = Math.min(Math.floor((Math.max(1, Math.floor(level)) - 1) / 10), CULTIVATION_REALMS.length - 1);
+  const failedTaskCount = getFailedTasksForReflection(tasks, 'month', getLocalDateKey(today), today).length;
+  const routineCompletionCount = tasks.reduce(
+    (total, task) => total + (task.routineAwardedPeriodKeys?.length ?? 0) + (task.challenge?.status === 'completed' ? 1 : 0),
+    0
+  );
+  const baseSuccessRate = BREAKTHROUGH_BASE_SUCCESS_RATES[realmIndex] ?? 8;
+  const finalSuccessRate = Math.max(
+    10,
+    Math.min(95, Math.round((baseSuccessRate - failedTaskCount + routineCompletionCount * 0.5) * 10) / 10)
+  );
+
+  return {
+    currentRealm: getRealmName(level),
+    nextRealm: getRealmName(level + 10),
+    baseSuccessRate,
+    failedTaskCount,
+    routineCompletionCount,
+    finalSuccessRate,
+    weeklyAttemptAvailable: true
+  };
 };
 
 export const normalizeUserEmail = (email: string) => email.trim().toLowerCase();
@@ -194,6 +242,27 @@ const getMonthDateKeys = (dateKey: string): string[] => {
   return Array.from({ length: daysInMonth }, (_, index) => getLocalDateKey(new Date(year, month, index + 1)));
 };
 
+const isCountedRoutineTask = (task: Task): boolean =>
+  task.category === 'daily' && (task.routine === 'weekly' || task.routine === 'monthly');
+
+const getRoutinePeriodKey = (task: Task, dateKey: string): string =>
+  task.routine === 'monthly'
+    ? dateKey.slice(0, 7)
+    : getWeekDateKeys(dateKey)[0];
+
+export const getRoutineTaskProgress = (
+  task: Task,
+  dateKey: string
+): Pick<TaskCompletionStats, 'completed' | 'total'> => {
+  if (!isCountedRoutineTask(task)) return { completed: task.completed ? 1 : 0, total: 1 };
+
+  const periodKey = getRoutinePeriodKey(task, dateKey);
+  const completed = new Set(task.routineCompletions?.[periodKey] ?? []).size;
+  const total = Math.max(1, Math.round(task.routineTargetCount || 1));
+
+  return { completed: Math.min(completed, total), total };
+};
+
 export const createUserTask = (
   input: NewTaskInput,
   id: string,
@@ -214,6 +283,10 @@ export const createUserTask = (
     points,
     completed: false,
     createdAt: input.dateKey ? createTaskTimestampForDate(input.dateKey, now) : now,
+    ...(input.category === 'daily' && input.routine && input.routine !== 'daily' ? { routine: input.routine } : {}),
+    ...(input.category === 'daily' && input.routine && input.routine !== 'daily'
+      ? { routineTargetCount: Math.max(1, Math.round(input.routineTargetCount || 1)) }
+      : {}),
     ...(input.category === 'daily' && input.templateId && !challengeDays ? { templateId: input.templateId } : {}),
     ...(input.category === 'daily' && input.rewardOnly && !challengeDays ? { rewardOnly: true } : {}),
     ...(challengeDays
@@ -317,6 +390,10 @@ export const isTaskCompletedOnDate = (task: Task, dateKey: string): boolean => {
   if (isCycleChallengeTask(task)) {
     return task.challenge?.completedDateKeys.includes(dateKey) ?? false;
   }
+  if (isCountedRoutineTask(task)) {
+    const progress = getRoutineTaskProgress(task, dateKey);
+    return progress.completed >= progress.total;
+  }
 
   return task.completed && getTaskDateKey(task) === dateKey;
 };
@@ -404,6 +481,9 @@ export const getTaskAwardedPoints = (task: Task): number => {
       0
     );
   }
+  if (isCountedRoutineTask(task)) {
+    return (task.routineAwardedPeriodKeys?.length ?? 0) * task.points;
+  }
 
   return task.completed ? task.completedPoints ?? task.points : 0;
 };
@@ -411,7 +491,7 @@ export const getTaskAwardedPoints = (task: Task): number => {
 export const isOverdueIncompleteTask = (
   task: Task,
   today: Date | string = new Date()
-): boolean => !isCycleChallengeTask(task) && !task.rewardOnly && !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
+): boolean => !isCycleChallengeTask(task) && !isCountedRoutineTask(task) && !task.rewardOnly && !task.completed && getTaskDateKey(task) < getLocalDateKey(today);
 
 export const getTaskPenaltyPoints = (
   task: Task,
@@ -433,6 +513,47 @@ export const toggleUserTaskCompletion = (
 ): { task: Task; pointsDelta: number } => {
   if (isCycleChallengeTask(task)) {
     return { task, pointsDelta: 0 };
+  }
+
+  if (isCountedRoutineTask(task)) {
+    const dateKey = getLocalDateKey(now);
+    const periodKey = getRoutinePeriodKey(task, dateKey);
+    const target = Math.max(1, Math.round(task.routineTargetCount || 1));
+    const currentDateKeys = new Set(task.routineCompletions?.[periodKey] ?? []);
+    if (currentDateKeys.has(dateKey)) {
+      currentDateKeys.delete(dateKey);
+    } else {
+      currentDateKeys.add(dateKey);
+    }
+
+    const completedDateKeys = [...currentDateKeys].sort();
+    const isComplete = completedDateKeys.length >= target;
+    const awardedPeriodKeys = new Set(task.routineAwardedPeriodKeys ?? []);
+    let pointsDelta = 0;
+    if (isComplete && !awardedPeriodKeys.has(periodKey)) {
+      awardedPeriodKeys.add(periodKey);
+      pointsDelta = task.points;
+    } else if (!isComplete && awardedPeriodKeys.has(periodKey)) {
+      awardedPeriodKeys.delete(periodKey);
+      pointsDelta = -task.points;
+    }
+
+    const routineCompletions = {
+      ...(task.routineCompletions ?? {}),
+      [periodKey]: completedDateKeys
+    };
+
+    return {
+      task: {
+        ...task,
+        completed: isComplete,
+        completedAt: isComplete ? now as unknown as Date : undefined,
+        completedPoints: isComplete ? task.points : undefined,
+        routineCompletions,
+        routineAwardedPeriodKeys: [...awardedPeriodKeys].sort()
+      },
+      pointsDelta
+    };
   }
 
   if (task.completed) {
@@ -479,6 +600,9 @@ const getTaskCompletionDateKeys = (task: Task): string[] => {
   if (isCycleChallengeTask(task)) {
     return task.challenge?.completedDateKeys ?? [];
   }
+  if (isCountedRoutineTask(task)) {
+    return Object.values(task.routineCompletions ?? {}).flat();
+  }
 
   if (!task.completed) return [];
   return [getLocalDateKey(task.completedAt || task.createdAt || new Date(getTaskCreatedTime(task)))];
@@ -511,28 +635,17 @@ export const getPlayerProgress = (
       .flatMap(getTaskCompletionDateKeys)
   );
 
-  let cursor = getLocalDateKey(today);
-  if (!completedDateKeys.has(cursor)) {
-    const yesterday = shiftDateKey(cursor, -1);
-    if (!completedDateKeys.has(yesterday)) {
-      return {
-        totalExp,
-        level,
-        exp,
-        maxExp,
-        expToNextLevel,
-        levelTitle,
-        streak: 0
-      };
-    }
-    cursor = yesterday;
-  }
-
-  let streak = 0;
-  while (completedDateKeys.has(cursor)) {
-    streak += 1;
-    cursor = shiftDateKey(cursor, -1);
-  }
+  const firstCompletedDateKey = [...completedDateKeys].sort()[0];
+  const streak = firstCompletedDateKey
+    ? Math.max(
+        1,
+        Math.floor(
+          (new Date(`${getLocalDateKey(today)}T00:00:00`).getTime() -
+            new Date(`${firstCompletedDateKey}T00:00:00`).getTime()) /
+            86_400_000
+        ) + 1
+      )
+    : 0;
 
   return {
     totalExp,
@@ -575,9 +688,11 @@ export const sortTasksForDisplay = (tasks: Task[]): Task[] =>
   });
 
 export const filterTasksByDate = (tasks: Task[], dateKey: string): Task[] =>
-  tasks.filter((task) => isCycleChallengeTask(task)
-    ? getCycleChallengeDateKeys(task).includes(dateKey)
-    : getTaskDateKey(task) === dateKey);
+  tasks.filter((task) => {
+    if (isCycleChallengeTask(task)) return getCycleChallengeDateKeys(task).includes(dateKey);
+    if (isCountedRoutineTask(task)) return dateKey >= getTaskDateKey(task);
+    return getTaskDateKey(task) === dateKey;
+  });
 
 export const calculateTaskCompletionStats = (
   tasks: Task[],
@@ -589,9 +704,18 @@ export const calculateTaskCompletionStats = (
     : viewMode === 'week'
       ? getWeekDateKeys(selectedDateKey)
       : getMonthDateKeys(selectedDateKey);
+  const seenRoutineOccurrences = new Set<string>();
   const taskOccurrences = dateKeys.flatMap((dateKey) =>
     filterTasksByDate(tasks, dateKey).map((task) => ({ task, dateKey }))
-  ).filter(({ task }) => !task.rewardOnly);
+  ).filter(({ task, dateKey }) => {
+    if (task.rewardOnly) return false;
+    if (!isCountedRoutineTask(task)) return true;
+
+    const key = `${task.id}::${getRoutinePeriodKey(task, dateKey)}`;
+    if (seenRoutineOccurrences.has(key)) return false;
+    seenRoutineOccurrences.add(key);
+    return true;
+  });
   const completed = taskOccurrences.filter(({ task, dateKey }) =>
     isTaskCompletedOnDate(task, dateKey)
   ).length;

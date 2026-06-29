@@ -223,13 +223,13 @@ export const LoginPage = () => {
                 </div>
               </div>
               <p className="text-base font-bold leading-relaxed text-pop-black/75">
-                完成登录后，任务、积分、复盘和身份状态会进入同一套游戏化界面。今天也从确认身份开始，把进度条往前推一点。
+                完成登录后，任务、元宝、复盘和身份状态会进入同一套游戏化界面。今天也从确认身份开始，把进度条往前推一点。
               </p>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
                 {[
                   { icon: ShieldCheck, label: '邮箱认证', color: 'bg-pop-green' },
-                  { icon: Sparkles, label: '积分存档', color: 'bg-pop-red' },
-                  { icon: Star, label: '连续打卡', color: 'bg-pop-yellow' }
+                  { icon: Sparkles, label: '元宝存档', color: 'bg-pop-red' },
+                  { icon: Star, label: '修道问心', color: 'bg-pop-yellow' }
                 ].map((item) => {
                   const Icon = item.icon;
                   return (

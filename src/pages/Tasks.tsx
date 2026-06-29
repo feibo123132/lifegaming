@@ -1,7 +1,7 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, Calendar, Clock, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, getWeekDates } from '../utils/helpers';
-import type { ViewMode } from '../types';
+import type { RoutineFrequency, ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
 import {
@@ -16,6 +16,7 @@ import {
   getFailedTasksForReflection,
   getLocalDateKey,
   getRecurringDailyTaskProgress,
+  getRoutineTaskProgress,
   getTaskPenaltyPoints,
   isCycleChallengeTask,
   isOverdueIncompleteTask,
@@ -34,6 +35,13 @@ import { useThemeMode } from '../lib/themeContext';
 
 type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
 type TaskCategory = Exclude<CategoryFilter, 'all'>;
+const routineOptions: Array<{ key: RoutineFrequency; label: string }> = [
+  { key: 'daily', label: '日常' },
+  { key: 'weekly', label: '周常' },
+  { key: 'monthly', label: '月常' }
+];
+const getRoutineLabel = (routine?: RoutineFrequency) =>
+  routine === 'weekly' ? '周常' : routine === 'monthly' ? '月常' : null;
 
 export function Tasks() {
   const themeMode = useThemeMode();
@@ -56,6 +64,9 @@ export function Tasks() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('daily');
+  const [newTaskRoutine, setNewTaskRoutine] = useState<RoutineFrequency>('daily');
+  const [isRoutineMenuOpen, setIsRoutineMenuOpen] = useState(false);
+  const [routineTargetCount, setRoutineTargetCount] = useState(4);
   const [newTaskPoints, setNewTaskPoints] = useState(getDefaultTaskPoints('daily'));
   const [saveDailyTemplate, setSaveDailyTemplate] = useState(true);
   const [isRewardOnlyEnabled, setIsRewardOnlyEnabled] = useState(false);
@@ -99,8 +110,8 @@ export function Tasks() {
     void ensureDailyTasksForDate(selectedDateKey);
   }, [ensureDailyTasksForDate, selectedDateKey]);
 
-  const toggleTask = async (taskId: string, soundAlreadyPlayed = false) => {
-    const { awardedPoints } = await toggleSyncedTask(taskId);
+  const toggleTask = async (taskId: string, dateKey = selectedDateKey, soundAlreadyPlayed = false) => {
+    const { awardedPoints } = await toggleSyncedTask(taskId, dateKey);
     if (shouldPlayTaskCompletionSound(awardedPoints)) {
       if (!soundAlreadyPlayed) {
         playTaskCompletionSound();
@@ -140,9 +151,11 @@ export function Tasks() {
       category: newTaskCategory,
       points: newTaskPoints,
       dateKey: selectedDateKey,
-      saveAsDailyTemplate: newTaskCategory === 'daily' && saveDailyTemplate && !isCycleChallengeEnabled,
-      rewardOnly: newTaskCategory === 'daily' && isRewardOnlyEnabled && !isCycleChallengeEnabled,
-      challengeDays: newTaskCategory === 'daily' && isCycleChallengeEnabled
+      routine: newTaskCategory === 'daily' ? newTaskRoutine : undefined,
+      routineTargetCount: newTaskCategory === 'daily' && newTaskRoutine !== 'daily' ? routineTargetCount : undefined,
+      saveAsDailyTemplate: newTaskCategory === 'daily' && newTaskRoutine === 'daily' && saveDailyTemplate && !isCycleChallengeEnabled,
+      rewardOnly: newTaskCategory === 'daily' && newTaskRoutine === 'daily' && isRewardOnlyEnabled && !isCycleChallengeEnabled,
+      challengeDays: newTaskCategory === 'daily' && newTaskRoutine === 'daily' && isCycleChallengeEnabled
         ? Math.max(1, Math.round(challengeDays || 1))
         : undefined
     });
@@ -156,6 +169,15 @@ export function Tasks() {
   const selectNewTaskCategory = (category: TaskCategory) => {
     setNewTaskCategory(category);
     setNewTaskPoints(getDefaultTaskPoints(category));
+    setIsRoutineMenuOpen(category === 'daily');
+  };
+
+  const selectNewTaskRoutine = (routine: RoutineFrequency) => {
+    setNewTaskCategory('daily');
+    setNewTaskRoutine(routine);
+    setRoutineTargetCount(routine === 'weekly' ? 4 : 1);
+    setNewTaskPoints(getDefaultTaskPoints('daily'));
+    setIsRoutineMenuOpen(false);
   };
 
   const toggleDailyTemplate = (checked: boolean) => {
@@ -298,7 +320,7 @@ export function Tasks() {
 
           <div>
             <label className="mb-2 block text-sm font-black text-pop-black">类型</label>
-            <div className="grid grid-cols-3 gap-2 rounded-pop border-4 border-pop-black bg-white p-1 shadow-pop-sm">
+            <div className="relative grid grid-cols-3 gap-2 rounded-pop border-4 border-pop-black bg-white p-1 shadow-pop-sm">
               {([
                 { key: 'main', label: copy.mainCategory },
                 { key: 'side', label: copy.sideCategory },
@@ -323,6 +345,25 @@ export function Tasks() {
                   {item.label}
                 </button>
               ))}
+              {isRoutineMenuOpen && (
+                <div className="absolute left-1/2 top-full z-20 mt-2 flex -translate-x-1/2 gap-2 rounded-pop border-4 border-pop-black bg-white p-2 shadow-pop">
+                  {routineOptions.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => selectNewTaskRoutine(item.key)}
+                      className={cn(
+                        "whitespace-nowrap rounded-pop px-3 py-2 text-sm font-black transition-all",
+                        newTaskRoutine === item.key
+                          ? "bg-pop-green text-white shadow-pop-sm"
+                          : "bg-white text-pop-black hover:bg-pop-yellow"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -348,7 +389,25 @@ export function Tasks() {
           </button>
         </div>
 
-        {newTaskCategory === 'daily' && (
+        {newTaskCategory === 'daily' && getRoutineLabel(newTaskRoutine) && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-black text-pop-black/70">
+            <span>当前：{getRoutineLabel(newTaskRoutine)}</span>
+            <label className="flex items-center gap-2">
+              <span>{newTaskRoutine === 'weekly' ? '每周至少' : '每月至少'}</span>
+              <input
+                value={routineTargetCount}
+                onChange={(event) => setRoutineTargetCount(Math.max(1, Math.round(Number(event.target.value) || 1)))}
+                className="pop-input w-20 !px-2 !py-1 text-center"
+                type="number"
+                min={1}
+                step={1}
+              />
+              <span>次</span>
+            </label>
+          </div>
+        )}
+
+        {newTaskCategory === 'daily' && newTaskRoutine === 'daily' && (
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-yellow px-4 py-2 font-black text-pop-black shadow-pop-sm">
               <input
@@ -361,7 +420,7 @@ export function Tasks() {
             </label>
             <label
               className="flex cursor-pointer items-center gap-3 rounded-pop border-3 border-pop-black bg-pop-green px-4 py-2 font-black text-white shadow-pop-sm"
-              title="完成时正常加分；没完成不扣积分、不扣经验，也不影响完成率"
+              title="完成时正常加分；没完成不扣元宝、不扣经验，也不影响完成率"
             >
               <input
                 checked={isRewardOnlyEnabled}
@@ -450,6 +509,9 @@ export function Tasks() {
           const recurringDailyProgress = isRecurringDailyTask(task)
             ? getRecurringDailyTaskProgress(tasks, task)
             : null;
+          const routineProgress = task.routine === 'weekly' || task.routine === 'monthly'
+            ? getRoutineTaskProgress(task, selectedDateKey)
+            : null;
           const failureReasonDraft = failureReasonDrafts[task.id] ?? task.failureReason ?? '';
           const isFailureReasonExpanded = Boolean(expandedFailureReasonIds[task.id]);
 
@@ -465,7 +527,7 @@ export function Tasks() {
                   return;
                 }
 
-                const shouldPlaySoundImmediately = shouldPlayTaskCompletionSoundBeforeToggle(
+                const shouldPlaySoundImmediately = !routineProgress && shouldPlayTaskCompletionSoundBeforeToggle(
                   task.completed,
                   task.points
                 );
@@ -474,7 +536,7 @@ export function Tasks() {
                   playTaskCompletionSound();
                 }
 
-                void toggleTask(task.id, shouldPlaySoundImmediately);
+                void toggleTask(task.id, selectedDateKey, shouldPlaySoundImmediately);
               }
             }}
             className={cn(
@@ -512,6 +574,16 @@ export function Tasks() {
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
+                    </span>
+                  )}
+                  {getRoutineLabel(task.routine) && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
+                      {getRoutineLabel(task.routine)}
+                    </span>
+                  )}
+                  {routineProgress && (
+                    <span className="pop-tag-yellow text-xs">
+                      {routineProgress.completed}/{routineProgress.total}
                     </span>
                   )}
                   {recurringDailyProgress && (
@@ -958,6 +1030,11 @@ export function Tasks() {
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
+                    </span>
+                  )}
+                  {getRoutineLabel(task.routine) && (
+                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
+                      {getRoutineLabel(task.routine)}
                     </span>
                   )}
                   <span className="pop-tag-red text-xs">-{penaltyPoints}{copy.points}</span>

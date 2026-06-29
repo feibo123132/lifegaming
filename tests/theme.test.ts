@@ -48,11 +48,11 @@ test('maps theme modes to stable root class names and labels', () => {
 test('keeps the original product language in POP mode', () => {
   const copy = getThemeCopy('pop');
 
-  assert.equal(copy.points, '积分');
-  assert.equal(copy.availablePoints, '可用积分');
+  assert.equal(copy.points, '元宝');
+  assert.equal(copy.availablePoints, '可用元宝');
   assert.equal(copy.experience, '经验值');
   assert.equal(copy.navTasks, '任务');
-  assert.equal(copy.navShop, '积分商城');
+  assert.equal(copy.navShop, '元宝商城');
   assert.equal(copy.navData, '数据记录');
   assert.equal(copy.navReview, '复盘中心');
 });
