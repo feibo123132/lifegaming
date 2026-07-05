@@ -38,6 +38,7 @@ import {
   pickLatestCloudGameDoc,
   reconcileGameDataPoints,
   resetExampleGameData,
+  removeUserTask,
   saveTaskFailureReason,
   shiftDateKey,
   shouldUseLocalGameDataForSync,
@@ -541,6 +542,39 @@ test('finds failed unfinished tasks for reflection by day week and month ranges'
   );
 });
 
+test('finds failed unfinished tasks for reflection by quarter and year ranges', () => {
+  const marchFailed = createUserTask(
+    { title: 'March failed', category: 'daily', points: 10, dateKey: '2026-03-31' },
+    'task-march-failed',
+    '2026-03-31T08:00:00.000'
+  )!;
+  const aprilFailed = createUserTask(
+    { title: 'April failed', category: 'daily', points: 10, dateKey: '2026-04-01' },
+    'task-april-failed',
+    '2026-04-01T08:00:00.000'
+  )!;
+  const juneFailed = createUserTask(
+    { title: 'June failed', category: 'main', points: 20, dateKey: '2026-06-30' },
+    'task-june-failed',
+    '2026-06-30T08:00:00.000'
+  )!;
+  const julyFailed = createUserTask(
+    { title: 'July failed', category: 'side', points: 15, dateKey: '2026-07-01' },
+    'task-july-failed',
+    '2026-07-01T08:00:00.000'
+  )!;
+  const tasks = [marchFailed, aprilFailed, juneFailed, julyFailed];
+
+  assert.deepEqual(
+    getFailedTasksForReflection(tasks, 'quarter', '2026-05-15', '2026-07-02').map((task) => task.id),
+    ['task-april-failed', 'task-june-failed']
+  );
+  assert.deepEqual(
+    getFailedTasksForReflection(tasks, 'year', '2026-05-15', '2026-07-02').map((task) => task.id),
+    ['task-march-failed', 'task-april-failed', 'task-june-failed', 'task-july-failed']
+  );
+});
+
 test('generates daily template tasks for a selected date without duplicates', () => {
   const data = {
     ...createInitialGameData('2026-06-10T00:00:00.000Z'),
@@ -684,6 +718,52 @@ test('removes invalid recurring tasks generated before their template creation d
   assert.deepEqual(filterTasksByDate(cleaned.tasks, '2026-06-09').map((task) => task.title), [
     '手动日常'
   ]);
+});
+
+test('removes a recurring daily template while preserving completed past instances', () => {
+  const template = createDailyTemplate(
+    { title: 'Daily cat chore', points: 20 },
+    'daily-template-cat',
+    '2026-06-09T08:00:00.000'
+  )!;
+  const june9 = {
+    ...createUserTask(
+      { title: 'Daily cat chore', category: 'daily', points: 20, templateId: template.id, dateKey: '2026-06-09' },
+      'task-2026-06-09-daily-template-cat',
+      '2026-06-09T08:00:00.000'
+    )!,
+    templateId: template.id,
+    completed: true,
+    completedAt: '2026-06-09T21:00:00.000' as unknown as Date,
+    completedPoints: 20
+  };
+  const june10 = {
+    ...createUserTask(
+      { title: 'Daily cat chore', category: 'daily', points: 20, templateId: template.id, dateKey: '2026-06-10' },
+      'task-2026-06-10-daily-template-cat',
+      '2026-06-10T08:00:00.000'
+    )!,
+    templateId: template.id
+  };
+  const other = createUserTask(
+    { title: 'Keep me', category: 'main', points: 10, dateKey: '2026-06-10' },
+    'task-keep',
+    '2026-06-10T09:00:00.000'
+  )!;
+  const data = {
+    ...createInitialGameData('2026-06-10T10:00:00.000'),
+    tasks: [june9, june10, other],
+    dailyTemplates: [template],
+    userPoints: 0,
+    redeemHistory: []
+  };
+
+  const removed = removeUserTask(data, june10.id, '2026-06-10T11:00:00.000');
+  const tomorrow = ensureDailyTemplateTasks(removed, '2026-06-11', '2026-06-11T08:00:00.000');
+
+  assert.deepEqual(removed.tasks.map((task) => task.id), [june9.id, other.id]);
+  assert.deepEqual(removed.dailyTemplates.map((item) => item.id), []);
+  assert.deepEqual(tomorrow.tasks.map((task) => task.id), [june9.id, other.id]);
 });
 
 test('marks only template-generated daily tasks as recurring daily tasks', () => {
@@ -1059,6 +1139,36 @@ test('keeps routine frequency for daily-category tasks', () => {
 
   assert.equal(weekly?.routine, 'weekly');
   assert.equal(daily?.routine, undefined);
+});
+
+test('shows monthly and weekly routines across later dates and sorts them first', () => {
+  const monthly = createUserTask(
+    { title: 'Monthly review', category: 'daily', routine: 'monthly', routineTargetCount: 1, points: 10, dateKey: '2026-06-09' },
+    'task-monthly',
+    '2026-06-09T01:00:00.000Z'
+  );
+  const weekly = createUserTask(
+    { title: 'Weekly review', category: 'daily', routine: 'weekly', routineTargetCount: 3, points: 10, dateKey: '2026-06-09' },
+    'task-weekly',
+    '2026-06-09T02:00:00.000Z'
+  );
+  const main = createUserTask(
+    { title: 'Main task', category: 'main', points: 10, dateKey: '2026-06-10' },
+    'task-main',
+    '2026-06-10T08:00:00.000Z'
+  );
+
+  assert.ok(monthly);
+  assert.ok(weekly);
+  assert.ok(main);
+  assert.deepEqual(
+    filterTasksByDate([monthly, weekly, main], '2026-06-12').map((task) => task.title),
+    ['Monthly review', 'Weekly review']
+  );
+  assert.deepEqual(
+    sortTasksForDisplay([main, weekly, monthly]).map((task) => task.title),
+    ['Monthly review', 'Weekly review', 'Main task']
+  );
 });
 
 test('completes a weekly routine when its target count is reached in the selected week', () => {

@@ -242,6 +242,36 @@ const getMonthDateKeys = (dateKey: string): string[] => {
   return Array.from({ length: daysInMonth }, (_, index) => getLocalDateKey(new Date(year, month, index + 1)));
 };
 
+const getQuarterDateKeys = (dateKey: string): string[] => {
+  const date = new Date(`${DATE_KEY_PATTERN.test(dateKey) ? dateKey : getLocalDateKey()}T00:00:00`);
+  const year = date.getFullYear();
+  const startMonth = Math.floor(date.getMonth() / 3) * 3;
+
+  return Array.from({ length: 3 }, (_, monthOffset) => {
+    const month = startMonth + monthOffset;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => getLocalDateKey(new Date(year, month, index + 1)));
+  }).flat();
+};
+
+const getYearDateKeys = (dateKey: string): string[] => {
+  const date = new Date(`${DATE_KEY_PATTERN.test(dateKey) ? dateKey : getLocalDateKey()}T00:00:00`);
+  const year = date.getFullYear();
+
+  return Array.from({ length: 12 }, (_, month) => {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => getLocalDateKey(new Date(year, month, index + 1)));
+  }).flat();
+};
+
+const getViewModeDateKeys = (viewMode: ViewMode, selectedDateKey: string): string[] => {
+  if (viewMode === 'day') return [selectedDateKey];
+  if (viewMode === 'week') return getWeekDateKeys(selectedDateKey);
+  if (viewMode === 'month') return getMonthDateKeys(selectedDateKey);
+  if (viewMode === 'quarter') return getQuarterDateKeys(selectedDateKey);
+  return getYearDateKeys(selectedDateKey);
+};
+
 const isCountedRoutineTask = (task: Task): boolean =>
   task.category === 'daily' && (task.routine === 'weekly' || task.routine === 'monthly');
 
@@ -682,7 +712,13 @@ const getTaskCreatedTime = (task: Task): number => {
 
 export const sortTasksForDisplay = (tasks: Task[]): Task[] =>
   [...tasks].sort((a, b) => {
-    const categoryDelta = CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category];
+    const getDisplayPriority = (task: Task): number => {
+      if (task.routine === 'monthly') return 0;
+      if (task.routine === 'weekly') return 1;
+      return CATEGORY_PRIORITY[task.category] + 2;
+    };
+
+    const categoryDelta = getDisplayPriority(a) - getDisplayPriority(b);
     if (categoryDelta !== 0) return categoryDelta;
     return getTaskCreatedTime(b) - getTaskCreatedTime(a);
   });
@@ -699,11 +735,7 @@ export const calculateTaskCompletionStats = (
   viewMode: ViewMode,
   selectedDateKey: string
 ): TaskCompletionStats => {
-  const dateKeys = viewMode === 'day'
-    ? [selectedDateKey]
-    : viewMode === 'week'
-      ? getWeekDateKeys(selectedDateKey)
-      : getMonthDateKeys(selectedDateKey);
+  const dateKeys = getViewModeDateKeys(viewMode, selectedDateKey);
   const seenRoutineOccurrences = new Set<string>();
   const taskOccurrences = dateKeys.flatMap((dateKey) =>
     filterTasksByDate(tasks, dateKey).map((task) => ({ task, dateKey }))
@@ -734,11 +766,7 @@ export const getFailedTasksForReflection = (
   selectedDateKey: string,
   today: Date | string = new Date()
 ): Task[] => {
-  const dateKeys = viewMode === 'day'
-    ? [selectedDateKey]
-    : viewMode === 'week'
-      ? getWeekDateKeys(selectedDateKey)
-      : getMonthDateKeys(selectedDateKey);
+  const dateKeys = getViewModeDateKeys(viewMode, selectedDateKey);
   const dateKeySet = new Set(dateKeys);
 
   return tasks
@@ -938,6 +966,34 @@ export const ensureDailyTemplateTasks = (
   return reconcileGameDataPoints({
     ...data,
     tasks: [...tasksToAdd, ...dedupedTasks],
+    updatedAt: now
+  }, now);
+};
+
+export const removeUserTask = (
+  data: GameData,
+  taskId: string,
+  now = new Date().toISOString()
+): GameData => {
+  const task = data.tasks.find((item) => item.id === taskId);
+  if (!task) return data;
+
+  const deleteDateKey = getTaskDateKey(task);
+  const nextTasks = task.templateId
+    ? data.tasks.filter((item) => {
+        if (item.templateId !== task.templateId) return true;
+        const itemDateKey = getTaskDateKey(item);
+        return item.completed && itemDateKey < deleteDateKey;
+      })
+    : data.tasks.filter((item) => item.id !== taskId);
+  const nextDailyTemplates = task.templateId
+    ? data.dailyTemplates.filter((template) => template.id !== task.templateId)
+    : data.dailyTemplates;
+
+  return reconcileGameDataPoints({
+    ...data,
+    tasks: nextTasks,
+    dailyTemplates: nextDailyTemplates,
     updatedAt: now
   }, now);
 };

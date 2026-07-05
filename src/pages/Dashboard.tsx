@@ -49,6 +49,7 @@ export function Dashboard() {
   const breakthroughStats = calculateBreakthroughStats(tasks, playerProgress.level, todayKey);
   const isAtBreakthroughBottleneck = playerProgress.level % 10 === 0;
   const isBreakthroughAttemptUsed = breakthroughAttemptWeekKey === breakthroughWeekKey;
+  const canTryBreakthrough = isAtBreakthroughBottleneck && !isBreakthroughAttemptUsed;
   const userPoints = calculateAvailablePoints({ tasks, redeemHistory }, todayKey);
   const todaySleep = sleepRecords[sleepRecords.length - 1];
   const displayName = profileName || user?.email?.split('@')[0] || '新玩家';
@@ -61,7 +62,7 @@ export function Dashboard() {
   ];
 
   const tryBreakthrough = () => {
-    if (isBreakthroughAttemptUsed) return;
+    if (!canTryBreakthrough) return;
     const succeeded = Math.random() * 100 < breakthroughStats.finalSuccessRate;
     setBreakthroughMessage(succeeded ? '破境成功，灵台清明！' : '道心不稳，下周再战');
     setBreakthroughAttemptWeekKey(breakthroughWeekKey);
@@ -335,7 +336,7 @@ export function Dashboard() {
       </div>
 
       {isBreakthroughOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-pop-black/50 p-4">
+        <div className="fixed -inset-[100vh] z-[9999] flex items-center justify-center bg-pop-black/50 p-4">
           <div className="pop-card w-full max-w-2xl bg-white p-6">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
@@ -389,10 +390,10 @@ export function Dashboard() {
             <button
               type="button"
               onClick={tryBreakthrough}
-              disabled={isBreakthroughAttemptUsed}
+              disabled={!canTryBreakthrough}
               className="pop-btn-primary mt-5 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isBreakthroughAttemptUsed ? '本周机会已用' : '开始突破'}
+              {!isAtBreakthroughBottleneck ? '未到瓶颈' : isBreakthroughAttemptUsed ? '本周机会已用' : '开始突破'}
             </button>
           </div>
         </div>

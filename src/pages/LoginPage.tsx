@@ -207,8 +207,8 @@ export const LoginPage = () => {
                 <Flame className="h-7 w-7 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-black leading-none">辛苦了，老己</h1>
-                <p className="mt-1 text-sm font-black text-pop-black/60">爱自己，是终身美丽的开始</p>
+                <h1 className="text-3xl font-black leading-none">道友，近来可好</h1>
+                <p className="mt-1 text-sm font-black text-pop-black/60">人生如棋，落子无悔</p>
               </div>
             </div>
 

@@ -16,6 +16,7 @@ import {
   normalizeUserEmail,
   pickLatestCloudGameDoc,
   reconcileGameDataPoints,
+  removeUserTask,
   resetExampleGameData,
   saveTaskFailureReason,
   shouldUseLocalGameDataForSync,
@@ -270,17 +271,7 @@ export const useGameStore = create<GameStoreState>()(
         const task = get().tasks.find((item) => item.id === taskId);
         if (!task) return false;
 
-        set((state) => {
-          const nextTasks = state.tasks.filter((item) => item.id !== taskId);
-
-          return withUpdatedAt({
-            tasks: nextTasks,
-            userPoints: calculateAvailablePoints({
-              tasks: nextTasks,
-              redeemHistory: state.redeemHistory
-            })
-          });
-        });
+        set((state) => removeUserTask(state, taskId));
         await get().syncToCloud();
         return true;
       },

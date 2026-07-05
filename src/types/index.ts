@@ -106,6 +106,6 @@ export interface WeeklyReport {
   exerciseDays: number;
 }
 
-export type ViewMode = 'day' | 'week' | 'month';
+export type ViewMode = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
 export type TabType = 'dashboard' | 'tasks' | 'data' | 'npc' | 'shop' | 'review';

@@ -1,7 +1,7 @@
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, Calendar, Clock, Target, Sparkles, TrendingUp, Star, Flame, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { cn, getWeekDates } from '../utils/helpers';
-import type { RoutineFrequency, ViewMode } from '../types';
+import type { RoutineFrequency, Task, ViewMode } from '../types';
 import { PointsAnimation } from '../components/PointsAnimation';
 import { useGameStore } from '../store/useGameStore';
 import {
@@ -33,8 +33,8 @@ import {
 import { getThemeCopy } from '../lib/theme';
 import { useThemeMode } from '../lib/themeContext';
 
-type CategoryFilter = 'all' | 'main' | 'side' | 'daily';
-type TaskCategory = Exclude<CategoryFilter, 'all'>;
+type CategoryFilter = 'all' | 'main' | 'side' | 'daily' | 'weekly' | 'monthly';
+type TaskCategory = 'main' | 'side' | 'daily';
 const routineOptions: Array<{ key: RoutineFrequency; label: string }> = [
   { key: 'daily', label: '日常' },
   { key: 'weekly', label: '周常' },
@@ -42,6 +42,15 @@ const routineOptions: Array<{ key: RoutineFrequency; label: string }> = [
 ];
 const getRoutineLabel = (routine?: RoutineFrequency) =>
   routine === 'weekly' ? '周常' : routine === 'monthly' ? '月常' : null;
+const taskViewModeOptions: ViewMode[] = ['day', 'week', 'month'];
+const reflectionViewModeOptions: ViewMode[] = ['week', 'month', 'quarter', 'year'];
+const viewModeLabels: Record<ViewMode, string> = {
+  day: '天',
+  week: '周',
+  month: '月',
+  quarter: '季',
+  year: '年'
+};
 
 export function Tasks() {
   const themeMode = useThemeMode();
@@ -73,6 +82,7 @@ export function Tasks() {
   const [isCycleChallengeEnabled, setIsCycleChallengeEnabled] = useState(false);
   const [challengeDays, setChallengeDays] = useState(14);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingPoints, setEditingPoints] = useState(10);
   const [failureReasonDrafts, setFailureReasonDrafts] = useState<Record<string, string>>({});
@@ -91,9 +101,12 @@ export function Tasks() {
     day: 'numeric'
   });
   const tasksForSelectedDate = filterTasksByDate(sortTasksForDisplay(tasks), selectedDateKey);
-  const filteredTasks = tasksForSelectedDate.filter(task => 
-    categoryFilter === 'all' || task.category === categoryFilter
-  );
+  const filteredTasks = tasksForSelectedDate.filter((task) => {
+    if (categoryFilter === 'all') return true;
+    if (categoryFilter === 'weekly' || categoryFilter === 'monthly') return task.routine === categoryFilter;
+    if (categoryFilter === 'daily') return task.category === 'daily' && !task.routine;
+    return task.category === categoryFilter;
+  });
 
   const currentViewStats = calculateTaskCompletionStats(tasks, viewMode, selectedDateKey);
   const completedCount = currentViewStats.completed;
@@ -104,7 +117,12 @@ export function Tasks() {
     ? selectedDateLabel
     : viewMode === 'week'
       ? '本周'
-      : '本月';
+      : viewMode === 'month'
+        ? '本月'
+        : viewMode === 'quarter'
+          ? '本季'
+          : '本年';
+  const visibleViewModeOptions = isReflectionMode ? reflectionViewModeOptions : taskViewModeOptions;
 
   useEffect(() => {
     void ensureDailyTasksForDate(selectedDateKey);
@@ -120,6 +138,9 @@ export function Tasks() {
       setShowAnimation(true);
     }
   };
+
+  const getTaskTypeLabel = (task: Task) =>
+    getRoutineLabel(task.routine) ?? categoryLabels[task.category];
 
   const checkInChallengeDay = async (taskId: string) => {
     const { awardedPoints } = await completeChallengeDay(taskId, selectedDateKey);
@@ -198,8 +219,15 @@ export function Tasks() {
     if (checked) setIsCycleChallengeEnabled(false);
   };
 
-  const deleteTask = async (event: MouseEvent<HTMLButtonElement>, taskId: string) => {
+  const deleteTask = async (event: MouseEvent<HTMLButtonElement>, task: (typeof tasks)[number]) => {
     event.stopPropagation();
+    setPendingDeleteTask(task);
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!pendingDeleteTask) return;
+    const taskId = pendingDeleteTask.id;
+    setPendingDeleteTask(null);
     await deleteSyncedTask(taskId);
   };
 
@@ -292,6 +320,12 @@ export function Tasks() {
     } catch {
       input.click();
     }
+  };
+
+  const toggleReflectionMode = () => {
+    if (!isReflectionMode && viewMode === 'day') setViewMode('week');
+    if (isReflectionMode && (viewMode === 'quarter' || viewMode === 'year')) setViewMode('month');
+    setIsReflectionMode((value) => !value);
   };
 
   // Mock month data - heatmap
@@ -463,6 +497,8 @@ export function Tasks() {
           { key: 'main', label: copy.mainCategory, color: 'bg-pop-yellow text-pop-black' },
           { key: 'side', label: copy.sideCategory, color: 'bg-pop-blue text-white' },
           { key: 'daily', label: copy.dailyCategory, color: 'bg-pop-green text-white' },
+          { key: 'weekly', label: '周常', color: 'bg-pop-yellow text-pop-black' },
+          { key: 'monthly', label: '月常', color: 'bg-pop-purple text-white' },
         ] as const).map((cat) => (
           <button
             key={cat.key}
@@ -567,18 +603,15 @@ export function Tasks() {
                     "pop-tag text-xs",
                     task.category === 'main' && "bg-pop-yellow text-pop-black",
                     task.category === 'side' && "bg-pop-blue text-white",
-                    task.category === 'daily' && "bg-pop-green text-white"
+                    task.category === 'daily' && !task.routine && "bg-pop-green text-white",
+                    task.routine === 'weekly' && "bg-pop-yellow text-pop-black",
+                    task.routine === 'monthly' && "bg-pop-purple text-white"
                   )}>
-                    {categoryLabels[task.category]}
+                    {getTaskTypeLabel(task)}
                   </span>
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
-                    </span>
-                  )}
-                  {getRoutineLabel(task.routine) && (
-                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
-                      {getRoutineLabel(task.routine)}
                     </span>
                   )}
                   {routineProgress && (
@@ -739,7 +772,7 @@ export function Tasks() {
                   </button>
                   <button
                     type="button"
-                    onClick={(event) => deleteTask(event, task.id)}
+                    onClick={(event) => deleteTask(event, task)}
                     className="flex h-11 w-11 items-center justify-center rounded-pop border-4 border-pop-black bg-white text-pop-red shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-pop-red hover:text-white hover:shadow-pop"
                     aria-label={`删除任务：${task.title}`}
                     title="删除任务"
@@ -1023,18 +1056,15 @@ export function Tasks() {
                     "pop-tag text-xs",
                     task.category === 'main' && "bg-pop-yellow text-pop-black",
                     task.category === 'side' && "bg-pop-blue text-white",
-                    task.category === 'daily' && "bg-pop-green text-white"
+                    task.category === 'daily' && !task.routine && "bg-pop-green text-white",
+                    task.routine === 'weekly' && "bg-pop-yellow text-pop-black",
+                    task.routine === 'monthly' && "bg-pop-purple text-white"
                   )}>
-                    {categoryLabels[task.category]}
+                    {getTaskTypeLabel(task)}
                   </span>
                   {isRecurringDailyTask(task) && (
                     <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
                       每天
-                    </span>
-                  )}
-                  {getRoutineLabel(task.routine) && (
-                    <span className="rounded-pop border-3 border-pop-black bg-pop-yellow px-2.5 py-0.5 text-xs font-black text-pop-black shadow-pop-sm">
-                      {getRoutineLabel(task.routine)}
                     </span>
                   )}
                   <span className="pop-tag-red text-xs">-{penaltyPoints}{copy.points}</span>
@@ -1091,7 +1121,7 @@ export function Tasks() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setIsReflectionMode((value) => !value)}
+            onClick={toggleReflectionMode}
             className={cn(
               "rounded-pop border-4 border-pop-black px-4 py-2 font-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop",
               isReflectionMode ? "bg-pop-black text-pop-yellow" : "bg-pop-red text-white"
@@ -1119,17 +1149,17 @@ export function Tasks() {
               onChange={(event) => setSelectedDateKey(event.target.value || getLocalDateKey())}
             />
           </div>
-          <div className="pop-switch">
-            {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+          <div className="pop-switch w-44">
+            {visibleViewModeOptions.map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={cn(
-                  "pop-switch-btn",
+                  "pop-switch-btn !px-0",
                   viewMode === mode && "active"
                 )}
               >
-                {mode === 'day' ? '天' : mode === 'week' ? '周' : '月'}
+                {viewModeLabels[mode]}
               </button>
             ))}
           </div>
@@ -1148,6 +1178,55 @@ export function Tasks() {
           </>
         )}
       </div>
+
+      {pendingDeleteTask && (
+        <div className="fixed -inset-[100vh] z-[9999] flex items-center justify-center bg-pop-black/50 p-4">
+          <div className="pop-card w-full max-w-xl bg-white p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-2xl font-black text-pop-black">确认删除</p>
+                <p className="mt-1 break-words text-lg font-black text-pop-red">「{pendingDeleteTask.title}」</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingDeleteTask(null)}
+                className="rounded-pop border-4 border-pop-black bg-white p-2 text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+                aria-label="取消删除"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="rounded-pop border-4 border-pop-black bg-pop-yellow/25 p-4 font-bold leading-relaxed text-pop-black">
+              {isRecurringDailyTask(pendingDeleteTask) ? (
+                <>
+                  <p>这会停止它每天自动出现，并删除今天及未来生成的同名任务。</p>
+                  <p className="mt-2">过去已经完成的记录会保留。</p>
+                </>
+              ) : (
+                <p>删除后不可撤销。</p>
+              )}
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteTask(null)}
+                className="rounded-pop border-4 border-pop-black bg-white px-5 py-3 font-black text-pop-black shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteTask()}
+                className="rounded-pop border-4 border-pop-black bg-pop-red px-5 py-3 font-black text-white shadow-pop-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
